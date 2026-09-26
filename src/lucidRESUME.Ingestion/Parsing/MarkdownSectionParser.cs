@@ -17,6 +17,8 @@ namespace lucidRESUME.Ingestion.Parsing;
 public static partial class MarkdownSectionParser
 {
     private static readonly Regex StableAnchorPattern = new(@"\s*\{#[A-Za-z][A-Za-z0-9_.-]*\}\s*$", RegexOptions.Compiled);
+    private static readonly Regex CompactMarkdownCitationPattern = new(@"\s*\[\[\d+\]\]\(#ref-\d+\)", RegexOptions.Compiled);
+    private static readonly Regex CompactPlainCitationPattern = new(@"\s*\[\d+\]", RegexOptions.Compiled);
     /// <summary>
     /// Populate resume sections from pre-parsed <see cref="DocumentSection"/> objects
     /// (produced by the direct DOCX/PDF parser).  When sections carry a
@@ -27,6 +29,15 @@ public static partial class MarkdownSectionParser
     public static void PopulateSections(
         ResumeDocument resume, string markdown, IReadOnlyList<DocumentSection>? sections = null)
     {
+        // cJobML references are a projection aid, not part of the candidate's prose.
+        // Strip them only from the semantic parsing copy. The canonical Markdown on
+        // ResumeDocument remains untouched, so links and evidence stay reversible.
+        if (markdown.Contains("cJobML 0.1: xref [n]", StringComparison.OrdinalIgnoreCase))
+        {
+            markdown = CompactMarkdownCitationPattern.Replace(markdown, "");
+            markdown = CompactPlainCitationPattern.Replace(markdown, "");
+        }
+
         // ── Fast path: use pre-classified sections from template hints ────────
         if (sections is { Count: > 0 } && sections.Any(s => s.SemanticType != null))
         {
@@ -102,15 +113,25 @@ public static partial class MarkdownSectionParser
                 ParseEducation(resume, eduContent);
         }
 
-        // ── 7. If no explicit Experience section, try heading-pipe heuristic ─
+        // ── 7. Parse Projects ────────────────────────────────────────────────
+        if (resume.Projects.Count == 0)
+        {
+            var projectContent = labelledSections.Where(s => s.Label == "Projects")
+                .SelectMany(s => s.Lines)
+                .ToList();
+            if (projectContent.Count > 0)
+                ParseProjects(resume, projectContent);
+        }
+
+        // ── 8. If no explicit Experience section, try heading-pipe heuristic ─
         if (resume.Experience.Count == 0)
             ParseExperienceFromPipeHeadings(resume, lines);
 
-        // ── 8. Last-resort: scan ALL lines for inline "Professional Experience:" labels ──
+        // ── 9. Last-resort: scan ALL lines for inline "Professional Experience:" labels ──
         if (resume.Experience.Count == 0)
             ExtractExperienceFromInlineLabel(resume, lines);
 
-        // ── 9. Education inline-label fallback ────────────────────────────────
+        // ── 10. Education inline-label fallback ───────────────────────────────
         if (resume.Education.Count == 0)
             ExtractEducationFromInlineLabel(resume, lines);
 
@@ -170,6 +191,16 @@ public static partial class MarkdownSectionParser
                 case "Education":
                     if (resume.Education.Count == 0)
                         ParseEducation(resume, bodyLines.ToList());
+                    break;
+
+                case "Projects":
+                    if (resume.Projects.Count == 0)
+                    {
+                        var lines = string.IsNullOrWhiteSpace(section.Body)
+                            ? CollectUnclassifiedFollowingSections(sections, i)
+                            : bodyLines.ToList();
+                        ParseProjects(resume, lines);
+                    }
                     break;
             }
         }
@@ -479,6 +510,9 @@ public static partial class MarkdownSectionParser
                 if (part.Length == 0) continue;
                 if (part.Contains('@') && Regex.IsMatch(part, @"^[^\s@]+@[^\s@]+\.[^\s@]+$"))
                     resume.Personal.Email ??= part;
+                else if (Regex.IsMatch(part, @"^\+?[\d\s().-]{9,24}$") &&
+                         part.Count(char.IsDigit) is >= 9 and <= 15)
+                    resume.Personal.Phone ??= part;
                 else if (part.Contains("linkedin.com/", StringComparison.OrdinalIgnoreCase))
                     resume.Personal.LinkedInUrl ??= part;
                 else if (part.Contains("github.com/", StringComparison.OrdinalIgnoreCase))
@@ -538,18 +572,34 @@ public static partial class MarkdownSectionParser
     {
         var result = new List<SectionBlock>();
         string? currentLabel = null;
+        var currentHeadingLevel = int.MaxValue;
         var currentLines = new List<string>();
 
         foreach (var line in lines)
         {
             if (line.StartsWith('#'))
             {
+                var headingLevel = line.TakeWhile(character => character == '#').Count();
                 var label = SectionClassifier.ClassifyHeading(line);
                 if (label != null)
                 {
                     if (currentLabel != null && currentLines.Count > 0)
                         result.Add(new SectionBlock(currentLabel, [.. currentLines]));
                     currentLabel = label;
+                    currentHeadingLevel = headingLevel;
+                    currentLines.Clear();
+                    continue;
+                }
+
+                // An unrecognised heading at the same or higher level still closes the
+                // preceding section. Without this, a trailing "Selected Evidence" or
+                // "Publications" section is consumed as part of Education.
+                if (currentLabel != null && headingLevel <= currentHeadingLevel)
+                {
+                    if (currentLines.Count > 0)
+                        result.Add(new SectionBlock(currentLabel, [.. currentLines]));
+                    currentLabel = null;
+                    currentHeadingLevel = int.MaxValue;
                     currentLines.Clear();
                     continue;
                 }
@@ -606,6 +656,67 @@ public static partial class MarkdownSectionParser
         }
     }
 
+    private static void ParseProjects(ResumeDocument resume, List<string> lines)
+    {
+        Project? current = null;
+        var description = new List<string>();
+
+        void Commit()
+        {
+            if (current is null || string.IsNullOrWhiteSpace(current.Name)) return;
+            if (description.Count > 0)
+                current.Description = string.Join(" ", description).Trim();
+            resume.Projects.Add(current);
+            current = null;
+            description.Clear();
+        }
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line)) continue;
+
+            if (line.StartsWith('#'))
+            {
+                Commit();
+                var heading = StableAnchorPattern.Replace(line.TrimStart('#').Trim(), "").Trim();
+                var parts = heading.Split(" | ", 2, StringSplitOptions.TrimEntries);
+                current = new Project { Name = parts[0] };
+                if (parts.Length == 2 && Uri.TryCreate(parts[1], UriKind.Absolute, out _))
+                    current.Url = parts[1];
+                continue;
+            }
+
+            if (current is null)
+            {
+                current = new Project { Name = line.TrimStart('-', '*', ' ') };
+                continue;
+            }
+
+            var content = line.TrimStart('-', '•', ' ');
+            var technologyMatch = Regex.Match(content,
+                @"^(?:\*\*)?(?:technologies|technology|stack)\s*:(?:\*\*)?\s*(?<items>.+)$",
+                RegexOptions.IgnoreCase);
+            if (technologyMatch.Success)
+            {
+                current.Technologies.AddRange(SplitSkillItems(technologyMatch.Groups["items"].Value)
+                    .Select(item => item.Trim().TrimEnd('.'))
+                    .Where(item => item.Length > 0));
+                continue;
+            }
+
+            if (Uri.TryCreate(content.Trim('*', '<', '>', ' '), UriKind.Absolute, out var uri))
+            {
+                current.Url = uri.ToString();
+                continue;
+            }
+
+            description.Add(content.Trim('*', ' '));
+        }
+
+        Commit();
+    }
+
     private static void ParseExperience(ResumeDocument resume, List<string> lines)
     {
         WorkExperience? current = null;
@@ -635,6 +746,19 @@ public static partial class MarkdownSectionParser
                 if (current != null) resume.Experience.Add(current);
                 current = datedRole;
                 continue;
+            }
+
+            // Canonical Markdown uses "### Title - Company {#stable-id}".
+            // Treat that as a role boundary before the generic subsection rule.
+            if (line.StartsWith("###", StringComparison.Ordinal))
+            {
+                var heading = StableAnchorPattern.Replace(line.TrimStart('#').Trim(), "").Trim();
+                if (TryParseRoleCompanyLine(heading, out var headedRoleCompany))
+                {
+                    if (current != null) resume.Experience.Add(current);
+                    current = headedRoleCompany;
+                    continue;
+                }
             }
 
             // Pattern 2: Sub-heading within experience (e.g. "### Mentorship & Education")

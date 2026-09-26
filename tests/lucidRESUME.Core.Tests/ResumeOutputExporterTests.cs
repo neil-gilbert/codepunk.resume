@@ -5,6 +5,7 @@ using lucidRESUME.Core.Models.Evidence;
 using lucidRESUME.Core.Models.Resume;
 using lucidRESUME.Export;
 using lucidRESUME.JobML;
+using UglyToad.PdfPig;
 
 namespace lucidRESUME.Core.Tests;
 
@@ -22,6 +23,7 @@ public sealed class ResumeOutputExporterTests
         var mainPart = document.MainDocumentPart!;
         var text = mainPart.Document!.Body!.InnerText;
         Assert.Contains("Jane Smith", text);
+        Assert.Contains("Platform Engineer", text);
         Assert.Contains("Target role: Platform Engineer", text);
         Assert.Contains("References", text);
         Assert.Contains("cJobML 0.1", text);
@@ -33,6 +35,17 @@ public sealed class ResumeOutputExporterTests
             relationship => relationship.Uri.ToString() == "https://mostlylucid.net/reduced-rag");
         Assert.Contains(mainPart.HyperlinkRelationships,
             relationship => relationship.Uri.ToString() == "https://example.com/jane.jobml");
+        Assert.Single(mainPart.Document.Descendants<DocumentFormat.OpenXml.Wordprocessing.Hyperlink>(),
+            hyperlink => hyperlink.Anchor?.Value == "ref-1");
+        Assert.NotNull(mainPart.NumberingDefinitionsPart?.Numbering);
+        var paragraphs = mainPart.Document.Descendants<DocumentFormat.OpenXml.Wordprocessing.Paragraph>().ToList();
+        Assert.Contains(paragraphs, paragraph =>
+            paragraph.InnerText.Contains("Engineer | Example Corp", StringComparison.Ordinal) &&
+            paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value == "Heading3");
+        var achievement = Assert.Single(paragraphs,
+            paragraph => paragraph.InnerText.StartsWith("Built a reliable platform", StringComparison.Ordinal));
+        Assert.NotNull(achievement.ParagraphProperties?.NumberingProperties);
+        Assert.DoesNotContain("•", achievement.InnerText);
         var validationErrors = new OpenXmlValidator().Validate(document).ToList();
         Assert.True(validationErrors.Count == 0,
             string.Join(Environment.NewLine, validationErrors.Select(error =>
@@ -66,6 +79,41 @@ public sealed class ResumeOutputExporterTests
 
         Assert.True(bytes.Length > 1_000);
         Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+        using var pdf = PdfDocument.Open(bytes);
+        var text = string.Join("\n", pdf.GetPages().Select(page => page.Text));
+        Assert.Contains("Target role: Platform Engineer", text);
+        Assert.Contains("[1]", text);
+        Assert.DoesNotContain("ref-1", text);
+        Assert.Contains("/StructTreeRoot", System.Text.Encoding.Latin1.GetString(bytes));
+    }
+
+    [Fact]
+    public async Task PdfExport_DoesNotRepeatCandidateIdentityOnLaterPages()
+    {
+        var resume = CreateResume(ResumeTemplateCatalog.AtsClassicId);
+        for (var index = 0; index < 14; index++)
+        {
+            resume.Experience.Add(new WorkExperience
+            {
+                Company = $"Example Company {index + 2}",
+                Title = "Platform Engineer",
+                StartDate = new DateOnly(2010 + index, 1, 1),
+                EndDate = new DateOnly(2010 + index, 12, 1),
+                Achievements =
+                [
+                    "Designed and operated a production platform with observable delivery controls.",
+                    "Improved reliability through automated testing and deployment validation."
+                ]
+            });
+        }
+
+        var bytes = await new PdfExporter().ExportAsync(resume);
+        using var pdf = PdfDocument.Open(bytes);
+        Assert.True(pdf.NumberOfPages > 1);
+        var pageTexts = pdf.GetPages().Select(page => page.Text).ToList();
+        Assert.Contains("Jane Smith", pageTexts[0]);
+        Assert.DoesNotContain(pageTexts.Skip(1), text => text.Contains("Jane Smith", StringComparison.Ordinal));
+        Assert.DoesNotContain(pageTexts, text => text.Contains(" / ", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -123,6 +171,7 @@ public sealed class ResumeOutputExporterTests
         var source = ResumeDocument.Create("source.md", "text/markdown", 1);
         source.Personal.FullName = "Jane Smith";
         source.Personal.Email = "jane@example.com";
+        source.CompleteJobMlUri = "https://example.com/jane.jobml";
         source.Skills.Add(new Skill { Name = "Kubernetes" });
         var experience = new WorkExperience
         {
@@ -179,7 +228,7 @@ public sealed class ResumeOutputExporterTests
         Assert.Contains("## MACHINE AREA", artifact.JobMlSource);
         Assert.Contains("https://github.com/example/atlas", artifact.JobMlSource);
         Assert.Contains("fingerprint:", artifact.JobMlSource);
-        Assert.Contains("type: source_ledger", artifact.JobMlSource);
+        Assert.Contains("type: career_transcript", artifact.JobMlSource);
         Assert.Contains("ledger://evidence:", artifact.JobMlSource);
         var projectedExperience = Assert.Single(artifact.Experience);
         Assert.Equal("Example Corp", projectedExperience.Company);
@@ -193,7 +242,9 @@ public sealed class ResumeOutputExporterTests
         Assert.Equal("Platform Engineer", artifact.TargetRole);
         Assert.True(new JobMlParser().TryParse(artifact.JobMlSource!, out var parsed, out var parseError), parseError);
         var compact = CJobMlProjector.Project(parsed!);
-        Assert.Contains("[Resume Source]", compact.Markdown);
+        Assert.Contains("[Career Transcript]", compact.Markdown);
+        Assert.Contains("Full JobML: <https://example.com/jane.jobml>", compact.Markdown);
+        Assert.Contains("<https://example.com/jane.jobml#entity-experience", compact.Markdown);
         Assert.DoesNotContain("ledger://", compact.Markdown);
         Assert.DoesNotContain("fingerprint", compact.Markdown, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(JobMlProcessor.Validate(parsed!), diagnostic =>

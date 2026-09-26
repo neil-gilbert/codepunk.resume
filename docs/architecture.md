@@ -290,8 +290,12 @@ Resume Ledger          JD Ledger
 [Docker : 0.60]       [Kubernetes : Req]   → cosine = 0.78 ✓
 [??? : 0.00]          [Payment : Required] → cosine = 0.00 ✗ (gap)
 
-Overall Fit = (required_coverage × 0.7) + (preferred_coverage × 0.3)
+Semantic Evidence Coverage = (required_coverage × 0.7) + (preferred_coverage × 0.3)
 ```
+
+This percentage describes term-to-evidence coverage only. It is not an eligibility,
+seniority, or overall job-fit probability. Degree, prior-title, scale and other hard
+requirements must be presented separately as explicit gates or gaps.
 
 ### Career Planner
 

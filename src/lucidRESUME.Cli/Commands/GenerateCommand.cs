@@ -34,10 +34,15 @@ public static class GenerateCommand
             Description = "Include compact cJobML citations and References in exported files (default: true)"
         };
         var configOpt = new Option<FileInfo?>("--config") { Description = "Config file" };
+        var fullJobMlOpt = new Option<string?>("--full-jobml")
+        {
+            Description = "Published HTTPS URL of the complete career transcript/JobML record; compact references deep-link to its evidence sections"
+        };
 
         var cmd = new Command("generate", "Project a resume from the evidence ledger for a target role")
         {
-            resumeOpt, resumeDirOpt, promptOpt, outputOpt, formatOpt, templateOpt, configOpt, compactJobMlOpt
+            resumeOpt, resumeDirOpt, promptOpt, outputOpt, formatOpt, templateOpt, configOpt, compactJobMlOpt,
+            fullJobMlOpt
         };
 
         cmd.SetAction(async (result, ct) =>
@@ -50,9 +55,17 @@ public static class GenerateCommand
             var template = ResumeTemplateCatalog.Get(result.GetValue(templateOpt));
             var config = result.GetValue(configOpt);
             var includeCompactJobMl = result.GetValue(compactJobMlOpt);
+            var fullJobMl = result.GetValue(fullJobMlOpt);
 
             var sp = ServiceBootstrap.Build(config?.FullName);
             var resume = await ResumeInputHelper.LoadAsync(sp, file, resumeDirectory, ct);
+            if (!string.IsNullOrWhiteSpace(fullJobMl))
+            {
+                if (!Uri.TryCreate(fullJobMl, UriKind.Absolute, out var fullJobMlUri) ||
+                    fullJobMlUri.Scheme is not ("http" or "https"))
+                    throw new ArgumentException("--full-jobml must be an absolute HTTP or HTTPS URL.");
+                resume.CompleteJobMlUri = fullJobMlUri.ToString();
+            }
             Console.Error.WriteLine($"  {resume.Skills.Count} skills, {resume.Experience.Count} positions");
 
             // Parse the target prompt once. This extracts target requirements; it does not

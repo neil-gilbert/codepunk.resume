@@ -221,6 +221,8 @@ public sealed class JobMlResumeCompiler(
     private static JobMlFile BuildProjection(JobMlFile source, string human,
         IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<SelectedClaim> selected, string? fullJobMlUri)
     {
+        var effectiveFullJobMl = AbsoluteHttpUri(fullJobMlUri ?? source.Data.Document.EffectiveFullJobMl);
+        var sourceEntities = source.Data.Entities.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
         var selectedById = selected.ToDictionary(x => x.Claim.Id, StringComparer.OrdinalIgnoreCase);
         var claims = new List<JobMlClaim>();
         foreach (var block in blocks)
@@ -238,7 +240,10 @@ public sealed class JobMlResumeCompiler(
                     Selector = new JobMlTextSelector { Exact = passageText }
                 }
             };
-                evidence.AddRange(original.Evidence.Where(e => !IsProse(e)).Select(CloneEvidence));
+                evidence.AddRange(original.Evidence.Where(e => !IsProse(e)).Select(item =>
+                    ProjectSupportingEvidence(item, original.Subject,
+                        sourceEntities.GetValueOrDefault(original.Subject)?.Name ?? original.Subject,
+                        effectiveFullJobMl)));
                 claims.Add(new JobMlClaim
                 {
                     Id = original.Id,
@@ -276,7 +281,7 @@ public sealed class JobMlResumeCompiler(
             {
                 Id = source.Data.Document.Id + "-projection",
                 Language = source.Data.Document.Language,
-                FullJobMl = fullJobMlUri ?? source.Data.Document.EffectiveFullJobMl
+                FullJobMl = effectiveFullJobMl?.ToString()
             },
             Entities = source.Data.Entities.Where(x => entityIds.Contains(x.Id)).Select(x => new JobMlEntity
             { Id = x.Id, Name = x.Name, Type = x.Type, Source = $"#{blocks.First(b => b.ClaimIds.Any(id => selectedById.GetValueOrDefault(id)?.Claim.Subject.Equals(x.Id, StringComparison.OrdinalIgnoreCase) == true)).SectionId}" }).ToList(),
@@ -353,6 +358,34 @@ public sealed class JobMlResumeCompiler(
         Selector = e.Selector,
         State = e.State
     };
+    private static JobMlEvidence ProjectSupportingEvidence(JobMlEvidence evidence, string subjectId,
+        string subjectName, Uri? fullJobMl)
+    {
+        var projected = CloneEvidence(evidence);
+        if (!IsTranscriptEvidence(projected)) return projected;
+
+        projected.Type = "career_transcript";
+        projected.Title = $"Complete transcript: {subjectName}";
+        projected.Uri = TranscriptSectionUri(fullJobMl, subjectId)?.ToString();
+        return projected;
+    }
+
+    private static bool IsTranscriptEvidence(JobMlEvidence evidence) =>
+        string.Equals(evidence.Type, "source_ledger", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(evidence.Type, "career_transcript", StringComparison.OrdinalIgnoreCase);
+
+    private static Uri? AbsoluteHttpUri(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        uri.Scheme is "http" or "https"
+            ? uri
+            : null;
+
+    private static Uri? TranscriptSectionUri(Uri? fullJobMl, string subjectId)
+    {
+        if (fullJobMl is null) return null;
+        var builder = new UriBuilder(fullJobMl) { Fragment = subjectId };
+        return builder.Uri;
+    }
     private static HashSet<string> Tokens(string value) => TokenPattern.Matches(value.ToLowerInvariant()).Select(x => x.Value).ToHashSet();
     private static int WordCount(string value) => Regex.Matches(value, @"\b[\p{L}\p{N}][\p{L}\p{N}'’-]*\b").Count;
     private static double Jaccard(IEnumerable<string> left, IEnumerable<string> right)

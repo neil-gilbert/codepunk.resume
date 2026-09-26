@@ -205,15 +205,28 @@ public sealed class JobSpecParser : IJobSpecParser
             job.Salary = new SalaryRange(fused.SalaryMin.Value, fused.SalaryMax ?? fused.SalaryMin.Value, currency, period);
         }
         if (fused.Skills.Count > 0)
-            job.RequiredSkills = fused.Skills.Select(s => s.Value).ToList();
+            job.RequiredSkills = fused.Skills.Select(s => s.Value)
+                .Where(skill => !IsEmployerToken(skill, job.Company))
+                .ToList();
         if (fused.PreferredSkills.Count > 0)
-            job.PreferredSkills = fused.PreferredSkills.Select(s => s.Value).ToList();
+            job.PreferredSkills = fused.PreferredSkills.Select(s => s.Value)
+                .Where(skill => !IsEmployerToken(skill, job.Company))
+                .ToList();
         if (fused.Responsibilities.Count > 0)
             job.Responsibilities = fused.Responsibilities.Select(s => s.Value).ToList();
         if (fused.Benefits.Count > 0)
             job.Benefits = fused.Benefits.Select(s => s.Value).ToList();
         if (fused.Education is not null)
             job.RequiredEducation = fused.Education.Value;
+    }
+
+    private static bool IsEmployerToken(string skill, string? company)
+    {
+        if (string.IsNullOrWhiteSpace(company)) return false;
+        var normalizedSkill = Regex.Replace(skill, @"[^A-Za-z0-9+#.]", "");
+        return Regex.Split(company, @"[^A-Za-z0-9+#.]+")
+            .Where(token => token.Length >= 2)
+            .Any(token => string.Equals(token, normalizedSkill, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsInPreferredSection(string text, string skill)

@@ -120,14 +120,15 @@ public static class CompoundMatchCommand
                 if (resume.LlmEnhancementTask != null) await resume.LlmEnhancementTask;
                 var singleLedger = await ledgerBuilder.BuildAsync(resume, ct);
                 var singleResult = await matcher.MatchAsync(singleLedger, jdLedger, ct);
-                Console.WriteLine($"  {Path.GetFileName(file),-50} Fit: {singleResult.OverallFit:P0} (req {singleResult.RequiredCoverage:P0}, pref {singleResult.PreferredCoverage:P0})");
+                Console.WriteLine($"  {Path.GetFileName(file),-50} Semantic coverage: {singleResult.OverallFit:P0} (req {singleResult.RequiredCoverage:P0}, pref {singleResult.PreferredCoverage:P0})");
             }
 
             // Match compound ledger
             var compoundResult = await matcher.MatchAsync(compoundLedger, jdLedger, ct);
 
             Console.WriteLine($"\n=== COMPOUND MATCH ===");
-            Console.WriteLine($"Overall Fit: {compoundResult.OverallFit:P0}");
+            Console.WriteLine($"Semantic Evidence Coverage: {compoundResult.OverallFit:P0}");
+            Console.WriteLine("Note: coverage is not an eligibility, seniority, or overall job-fit score.");
             Console.WriteLine($"Required Coverage: {compoundResult.RequiredCoverage:P0}");
             Console.WriteLine($"Preferred Coverage: {compoundResult.PreferredCoverage:P0}");
             Console.WriteLine($"Avg Evidence Strength: {compoundResult.AverageEvidenceStrength:F2}");

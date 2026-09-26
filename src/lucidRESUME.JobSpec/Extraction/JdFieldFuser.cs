@@ -6,6 +6,11 @@ namespace lucidRESUME.JobSpec.Extraction;
 /// </summary>
 public static class JdFieldFuser
 {
+    private static readonly HashSet<string> NonSkillFragments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "turning", "prototypes", "regular", "relevant", "dependable"
+    };
+
     public static FusedJdFields Fuse(IReadOnlyList<JdFieldCandidate> candidates, FusionOptions? options = null)
     {
         var opts = options ?? new FusionOptions();
@@ -31,6 +36,7 @@ public static class JdFieldFuser
                         Math.Min(1.0, rrfScore),
                         sources);
                 })
+                .Where(candidate => candidate.Confidence >= opts.MinConfidence)
                 .OrderByDescending(f => f.Confidence)
                 .ToList();
 
@@ -67,10 +73,10 @@ public static class JdFieldFuser
                     result.SalaryPeriod = fused.FirstOrDefault()?.Value;
                     break;
                 case "skill":
-                    result.Skills = fused;
+                    result.Skills = fused.Where(HasNonNerSupport).ToList();
                     break;
                 case "preferredskill":
-                    result.PreferredSkills = fused;
+                    result.PreferredSkills = fused.Where(HasNonNerSupport).ToList();
                     break;
                 case "responsibility":
                     result.Responsibilities = fused;
@@ -91,6 +97,24 @@ public static class JdFieldFuser
         }
 
         return result;
+    }
+
+    // NER is valuable corroborating evidence, but token labellers and small local
+    // models can both promote isolated sentence words ("Turning", "Relevant") to
+    // skills. Single-word requirements need deterministic structural/taxonomy support.
+    // Multiword capabilities may still come from the bounded LLM extractor.
+    private static bool HasNonNerSupport(FusedCandidate candidate)
+    {
+        if (NonSkillFragments.Contains(candidate.Value.Trim())) return false;
+
+        if (candidate.Sources.Any(source =>
+                source.Equals("structural", StringComparison.OrdinalIgnoreCase) ||
+                source.Equals("taxonomy", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        var wordCount = candidate.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        return wordCount >= 2 && candidate.Sources.Any(source =>
+            source.Equals("llm", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string Normalize(string value) =>

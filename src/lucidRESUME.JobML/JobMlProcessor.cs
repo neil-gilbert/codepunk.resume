@@ -193,6 +193,7 @@ public sealed class JobMlProcessor
     {
         if (!string.IsNullOrWhiteSpace(evidence.Uri) ||
             string.Equals(evidence.Type, "source_ledger", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(evidence.Type, "career_transcript", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(evidence.Type, "qualification", StringComparison.OrdinalIgnoreCase))
             return new EvidenceResolution(evidence, EvidenceState.External);
         if (string.IsNullOrWhiteSpace(evidence.Ref))

@@ -37,13 +37,17 @@ public static class TailorCommand
             DefaultValueFactory = _ => true,
             Description = "Include compact cJobML citations and References in exported files (default: true)"
         };
+        var fullJobMlOpt = new Option<string?>("--full-jobml")
+        {
+            Description = "Published HTTPS URL of the complete career transcript/JobML record; compact references deep-link to its evidence sections"
+        };
 
         var jobFileOpt = new Option<FileInfo?>("--job-file") { Description = "Job description file (alternative to --job)" };
 
         var cmd = new Command("tailor", "Project a resume from the ledger for a specific job description")
         {
             resumeOpt, resumeDirOpt, jobOpt, jobFileOpt, outputOpt, configOpt, evalOnlyOpt, formatOpt, templateOpt,
-            compactJobMlOpt
+            compactJobMlOpt, fullJobMlOpt
         };
 
         cmd.SetAction(async (result, ct) =>
@@ -58,6 +62,7 @@ public static class TailorCommand
             var format = result.GetValue(formatOpt) ?? "markdown";
             var template = ResumeTemplateCatalog.Get(result.GetValue(templateOpt));
             var includeCompactJobMl = result.GetValue(compactJobMlOpt);
+            var fullJobMl = result.GetValue(fullJobMlOpt);
 
             // Resolve JD from --job or --job-file
             if (string.IsNullOrWhiteSpace(jobText) && jobFile is { Exists: true })
@@ -75,6 +80,13 @@ public static class TailorCommand
 
             // Parse resume (awaits LLM skill recovery if triggered)
             var resume = await ResumeInputHelper.LoadAsync(services, resumeFile, resumeDirectory, ct);
+            if (!string.IsNullOrWhiteSpace(fullJobMl))
+            {
+                if (!Uri.TryCreate(fullJobMl, UriKind.Absolute, out var fullJobMlUri) ||
+                    fullJobMlUri.Scheme is not ("http" or "https"))
+                    throw new ArgumentException("--full-jobml must be an absolute HTTP or HTTPS URL.");
+                resume.CompleteJobMlUri = fullJobMlUri.ToString();
+            }
             Console.Error.WriteLine($"  {resume.Skills.Count} skills, {resume.Experience.Count} positions");
 
             // Parse JD
@@ -93,7 +105,7 @@ public static class TailorCommand
             // Compress
             Console.Error.WriteLine("Compressing...");
             var compressed = await compressor.CompressAsync(resume, jd, ct);
-            Console.Error.WriteLine($"  Fit: {compressed.OverallFit:P0}, {compressed.IncludedRoleCount}/{compressed.OriginalRoleCount} roles, {compressed.MatchedSkillCount}/{compressed.OriginalSkillCount} requirements");
+            Console.Error.WriteLine($"  Semantic evidence coverage: {compressed.OverallFit:P0} (not eligibility or job fit), {compressed.IncludedRoleCount}/{compressed.OriginalRoleCount} roles, {compressed.MatchedSkillCount}/{compressed.OriginalSkillCount} requirement terms");
             if (compressed.Gaps.Count > 0)
                 Console.Error.WriteLine($"  Gaps: {string.Join(", ", compressed.Gaps)}");
 

@@ -18,6 +18,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IDocumentParser, PdfTextParser>();
         services.AddSingleton<IDocumentParser, TxtParser>();
+        services.AddSingleton<IDocumentParser, MarkdownDirectParser>();
         services.AddSingleton<ParserSelector>();
         return services;
     }

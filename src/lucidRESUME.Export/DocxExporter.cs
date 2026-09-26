@@ -46,15 +46,7 @@ public sealed class DocxExporter : IResumeExporter
             if (p.FullName != null)
                 body.Append(CreateParagraph(p.FullName, "Heading1"));
 
-            var contacts = new List<string>();
-            if (p.Email != null) contacts.Add(p.Email);
-            if (p.Phone != null) contacts.Add(p.Phone);
-            if (p.Location != null) contacts.Add(p.Location);
-            if (p.LinkedInUrl != null) contacts.Add(p.LinkedInUrl);
-            if (p.GitHubUrl != null) contacts.Add(p.GitHubUrl);
-            if (p.WebsiteUrl != null) contacts.Add(p.WebsiteUrl);
-            if (contacts.Count > 0)
-                body.Append(CreateParagraph(string.Join("  |  ", contacts), fontSize: 18, color: "555555", fontFamily: template.FontFamily));
+            AppendContactLines(body, p, template);
             if (!string.IsNullOrWhiteSpace(resume.TargetRole))
                 body.Append(CreateParagraph($"Target role: {resume.TargetRole}", fontSize: 20,
                     color: template.AccentHex, bold: true, fontFamily: template.FontFamily));
@@ -75,7 +67,13 @@ public sealed class DocxExporter : IResumeExporter
             {
                 body.Append(CreateParagraph("Skills", "Heading2"));
                 foreach (var g in resume.Skills.GroupBy(s => s.Category ?? "General"))
-                    body.Append(CreateSkillGroup(g.Key, g.Select(s => s.Name).ToList(), template));
+                {
+                    var skills = g.Select(s => s.Name).ToList();
+                    var paragraph = CreateSkillGroup(g.Key, skills, template);
+                    AppendCitationMarkers(paragraph,
+                        ExportArtifact.CitationNumbers($"{g.Key}: {string.Join(", ", skills)}", compact));
+                    body.Append(paragraph);
+                }
             }
 
             // --- Experience ---
@@ -87,19 +85,21 @@ public sealed class DocxExporter : IResumeExporter
                     if (resume.Experience.Count >= 10 && experienceIndex == 7)
                         body.Append(new Paragraph(new Run(new Break { Type = BreakValues.Page })));
                     var exp = resume.Experience[experienceIndex];
-                    body.Append(CreateExperienceHeader(exp, template));
+                    var roleParagraphs = new List<Paragraph>();
                     var dates = FormatDateRange(exp.StartDate, exp.EndDate, exp.IsCurrent);
-                    if (!string.IsNullOrEmpty(dates))
-                        body.Append(CreateParagraph(dates, fontSize: 18, color: "888888", italic: true));
-                    if (!string.IsNullOrEmpty(exp.Location))
-                        body.Append(CreateParagraph(exp.Location, fontSize: 18, color: "888888"));
+                    roleParagraphs.Add(CreateExperienceHeader(exp, dates, template));
                     if (exp.Technologies.Count > 0)
-                        body.Append(CreateParagraph($"Technologies: {string.Join(", ", exp.Technologies)}", fontSize: 18, color: template.AccentHex, italic: true, fontFamily: template.FontFamily));
+                        roleParagraphs.Add(CreateParagraph($"Technologies: {string.Join(", ", exp.Technologies)}", fontSize: 18, color: template.AccentHex, italic: true, fontFamily: template.FontFamily));
                     foreach (var a in exp.Achievements)
                     {
                         var paragraph = CreateBullet(a);
                         AppendCitationMarkers(paragraph, ExportArtifact.CitationNumbers(a, compact));
-                        body.Append(paragraph);
+                        roleParagraphs.Add(paragraph);
+                    }
+                    for (var paragraphIndex = 0; paragraphIndex < roleParagraphs.Count; paragraphIndex++)
+                    {
+                        KeepTogether(roleParagraphs[paragraphIndex], paragraphIndex < roleParagraphs.Count - 1);
+                        body.Append(roleParagraphs[paragraphIndex]);
                     }
                     body.Append(CreateParagraph("")); // spacing
                 }
@@ -113,7 +113,13 @@ public sealed class DocxExporter : IResumeExporter
                 {
                     var title = new[] { edu.Degree, edu.FieldOfStudy, edu.Institution }
                         .Where(s => !string.IsNullOrWhiteSpace(s));
-                    body.Append(CreateParagraph(string.Join(" — ", title), bold: true));
+                    var paragraph = CreateParagraph(string.Join(" — ", title), bold: true);
+                    var qualification = string.IsNullOrWhiteSpace(edu.FieldOfStudy)
+                        ? edu.Degree ?? ""
+                        : $"{edu.Degree} | {edu.FieldOfStudy}";
+                    AppendCitationMarkers(paragraph,
+                        ExportArtifact.CitationNumbers($"{qualification} | {edu.Institution ?? ""}", compact));
+                    body.Append(paragraph);
                     var dates = FormatDateRange(edu.StartDate, edu.EndDate, false);
                     if (!string.IsNullOrEmpty(dates))
                         body.Append(CreateParagraph(dates, fontSize: 18, color: "888888", italic: true));
@@ -191,8 +197,47 @@ public sealed class DocxExporter : IResumeExporter
                     new FontSize { Val = ((int)Math.Round(template.SectionFontSize * 2)).ToString() }
                 )
             )
-            { Type = StyleValues.Paragraph, StyleId = "Heading2" }
+            { Type = StyleValues.Paragraph, StyleId = "Heading2" },
+            new Style(
+                new StyleName { Val = "Heading 3" },
+                new StyleParagraphProperties(
+                    new KeepNext(),
+                    new SpacingBetweenLines { Before = "80", After = "20" }),
+                new StyleRunProperties(
+                    new RunFonts { Ascii = template.FontFamily, HighAnsi = template.FontFamily },
+                    new Bold(),
+                    new Color { Val = template.AccentHex },
+                    new FontSize { Val = "24" })
+            )
+            { Type = StyleValues.Paragraph, StyleId = "Heading3" },
+            new Style(
+                new StyleName { Val = "List Bullet" },
+                new StyleParagraphProperties(
+                    new Indentation { Left = "360", Hanging = "180" })
+            )
+            { Type = StyleValues.Paragraph, StyleId = "ListBullet" }
         );
+
+        AddNumbering(mainPart);
+    }
+
+    private static void AddNumbering(MainDocumentPart mainPart)
+    {
+        var numberingPart = mainPart.AddNewPart<NumberingDefinitionsPart>();
+        numberingPart.Numbering = new Numbering(
+            new AbstractNum(
+                new MultiLevelType { Val = MultiLevelValues.SingleLevel },
+                new Level(
+                    new NumberingFormat { Val = NumberFormatValues.Bullet },
+                    new LevelText { Val = "•" },
+                    new LevelJustification { Val = LevelJustificationValues.Left },
+                    new PreviousParagraphProperties(
+                        new Indentation { Left = "360", Hanging = "180" }),
+                    new NumberingSymbolRunProperties(
+                        new RunFonts { Ascii = "Arial", HighAnsi = "Arial" }))
+                { LevelIndex = 0 })
+            { AbstractNumberId = 1 },
+            new NumberingInstance(new AbstractNumId { Val = 1 }) { NumberID = 1 });
     }
 
     private static Paragraph CreateParagraph(string text, string? styleId = null, int fontSize = 22,
@@ -213,27 +258,86 @@ public sealed class DocxExporter : IResumeExporter
         return para;
     }
 
-    private static Paragraph CreateExperienceHeader(WorkExperience exp, ResumeTemplate template)
+    private static void AppendContactLines(Body body, PersonalInfo personal, ResumeTemplate template)
     {
-        var para = new Paragraph();
-        var titleRun = new Run(new RunProperties(new Bold(), new FontSize { Val = "24" }),
-            new Text(exp.Title ?? "") { Space = SpaceProcessingModeValues.Preserve });
-        var sepRun = new Run(new RunProperties(new FontSize { Val = "24" }),
-            new Text(" — ") { Space = SpaceProcessingModeValues.Preserve });
-        var compRun = new Run(new RunProperties(new Color { Val = template.AccentHex }, new FontSize { Val = "24" }),
-            new Text(exp.Company ?? "") { Space = SpaceProcessingModeValues.Preserve });
-        para.Append(titleRun, sepRun, compRun);
-        return para;
+        if (!string.IsNullOrWhiteSpace(personal.Email))
+            body.Append(CreateParagraph(personal.Email, fontSize: 18, color: "555555",
+                fontFamily: template.FontFamily));
+
+        if (!string.IsNullOrWhiteSpace(personal.Phone))
+            body.Append(CreateParagraph(personal.Phone, fontSize: 18, color: "555555",
+                fontFamily: template.FontFamily));
+        if (!string.IsNullOrWhiteSpace(personal.Location))
+            body.Append(CreateParagraph(personal.Location, fontSize: 18, color: "555555",
+                fontFamily: template.FontFamily));
+
+        var profiles = string.Join("  |  ", new[] { personal.LinkedInUrl, personal.GitHubUrl, personal.WebsiteUrl }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+        if (!string.IsNullOrWhiteSpace(profiles))
+            body.Append(CreateParagraph(profiles, fontSize: 18, color: "555555", fontFamily: template.FontFamily));
+    }
+
+    private static Paragraph CreateExperienceHeader(WorkExperience experience, string dates, ResumeTemplate template)
+    {
+        var paragraph = new Paragraph(new ParagraphProperties(
+            new ParagraphStyleId { Val = "Heading3" }));
+
+        void Add(string value, bool bold = false, string? color = null)
+        {
+            var properties = new RunProperties(
+                new RunFonts { Ascii = template.FontFamily, HighAnsi = template.FontFamily });
+            if (bold) properties.Append(new Bold());
+            if (color is not null) properties.Append(new Color { Val = color });
+            properties.Append(new FontSize { Val = "22" });
+            paragraph.Append(new Run(properties,
+                new Text(value) { Space = SpaceProcessingModeValues.Preserve }));
+        }
+
+        if (!string.IsNullOrWhiteSpace(experience.Title)) Add(experience.Title, bold: true);
+        if (!string.IsNullOrWhiteSpace(experience.Title) && !string.IsNullOrWhiteSpace(experience.Company)) Add(" | ");
+        if (!string.IsNullOrWhiteSpace(experience.Company)) Add(experience.Company, bold: true, color: template.AccentHex);
+        if (!string.IsNullOrWhiteSpace(experience.Location)) Add($" | {experience.Location}", color: "666666");
+        if (!string.IsNullOrWhiteSpace(dates)) Add($" | {dates}", color: "666666");
+        return paragraph;
     }
 
     private static Paragraph CreateBullet(string text)
     {
         var para = new Paragraph(
             new ParagraphProperties(
-                new Indentation { Left = "360", Hanging = "180" }),
+                new ParagraphStyleId { Val = "ListBullet" },
+                new NumberingProperties(
+                    new NumberingLevelReference { Val = 0 },
+                    new NumberingId { Val = 1 })),
             new Run(new RunProperties(new FontSize { Val = "20" }),
-                new Text($"•  {text}") { Space = SpaceProcessingModeValues.Preserve }));
+                new Text(text) { Space = SpaceProcessingModeValues.Preserve }));
         return para;
+    }
+
+    private static void KeepTogether(Paragraph paragraph, bool keepWithNext)
+    {
+        var properties = paragraph.ParagraphProperties;
+        if (properties is null)
+        {
+            properties = new ParagraphProperties();
+            paragraph.PrependChild(properties);
+        }
+        var style = properties.GetFirstChild<ParagraphStyleId>();
+        if (keepWithNext)
+        {
+            var keepNext = new KeepNext();
+            if (style is null) properties.PrependChild(keepNext);
+            else properties.InsertAfter(keepNext, style);
+            properties.InsertAfter(new KeepLines(), keepNext);
+        }
+        else if (style is null)
+        {
+            properties.PrependChild(new KeepLines());
+        }
+        else
+        {
+            properties.InsertAfter(new KeepLines(), style);
+        }
     }
 
     private static Paragraph CreateSkillGroup(string category, List<string> skills, ResumeTemplate template)
@@ -249,17 +353,16 @@ public sealed class DocxExporter : IResumeExporter
     private static void AppendCitationMarkers(Paragraph paragraph, IReadOnlyList<int> numbers)
     {
         if (numbers.Count == 0) return;
-        paragraph.Append(new Run(new Text(" ")));
         for (var index = 0; index < numbers.Count; index++)
         {
-            if (index > 0) paragraph.Append(new Run(new Text(", ")));
             var number = numbers[index];
             paragraph.Append(new Hyperlink(
                 new Run(
                     new RunProperties(
                         new Color { Val = "0563C1" },
                         new Underline { Val = UnderlineValues.Single }),
-                    new Text($"[{number}]")))
+                    new Text(index == 0 ? $"\u00A0[{number}]" : $",\u00A0[{number}]")
+                    { Space = SpaceProcessingModeValues.Preserve }))
             {
                 Anchor = $"ref-{number}",
                 History = OnOffValue.FromBoolean(true)

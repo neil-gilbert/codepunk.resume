@@ -60,15 +60,18 @@ public sealed class ResumeArtifactBuilder
         ResumeProjectionInfo projection, EvidenceLedger ledger, JobDescription job)
     {
         var index = MarkdownEvidenceIndex.Create(markdown);
+        var fullJobMl = Uri.TryCreate(source.CompleteJobMlUri, UriKind.Absolute, out var configuredFullJobMl)
+            ? configuredFullJobMl
+            : Uri.TryCreate(TryReadFullJobMl(source.JobMlSource), UriKind.Absolute, out var embeddedFullJobMl)
+                ? embeddedFullJobMl
+                : null;
         var root = new JobMlRoot
         {
             Document = new JobMlDocumentMetadata
             {
                 Id = EvidenceLedgerBuilder.Slug(source.Personal.FullName ?? "resume"),
                 Language = "en-GB",
-                FullJobMl = Uri.TryCreate(source.CompleteJobMlUri, UriKind.Absolute, out _)
-                    ? source.CompleteJobMlUri
-                    : TryReadFullJobMl(source.JobMlSource)
+                FullJobMl = fullJobMl?.ToString()
             },
             Job = new JobMlJob { Id = EvidenceLedgerBuilder.Slug(job.Title ?? "target-role") }
         };
@@ -122,13 +125,12 @@ public sealed class ResumeArtifactBuilder
                     : new JobMlEvidence
                     {
                         Id = evidence.Id,
-                        Type = "source_ledger",
+                        Type = "career_transcript",
                         Ref = $"ledger://{evidence.Id}",
-                        // cJobML cites the imported source document, not a copy of the
-                        // passage. Exact text, locator and drift hash remain in full JobML.
-                        Title = evidence.SourceName.EndsWith("-merged.md", StringComparison.OrdinalIgnoreCase)
-                            ? "Canonical career ledger"
-                            : evidence.SourceName,
+                        // The compact document points to the complete prose section. Exact
+                        // passage identity, locator and drift hash remain in full JobML.
+                        Uri = FullTranscriptSectionUri(fullJobMl, ledgerClaim.SubjectId),
+                        Title = $"Complete transcript: {TranscriptSectionTitle(ledgerClaim.SubjectId, source)}",
                         Fingerprint = new JobMlFingerprint { Text = evidence.FastHash },
                         Selector = new JobMlTextSelector { Exact = evidence.Text }
                     });
@@ -223,6 +225,38 @@ public sealed class ResumeArtifactBuilder
     {
         var separator = evidence.Text.IndexOf(':');
         return separator > 0 ? evidence.Text[..separator].Trim() : evidence.Kind;
+    }
+
+    private static string? FullTranscriptSectionUri(Uri? fullJobMl, string? subject)
+    {
+        if (fullJobMl is null || string.IsNullOrWhiteSpace(subject)) return null;
+        var builder = new UriBuilder(fullJobMl)
+        {
+            Fragment = CareerRecordJobMlBuilder.StableEntityId(subject)
+        };
+        return builder.Uri.ToString();
+    }
+
+    private static string TranscriptSectionTitle(string? subject, ResumeDocument source)
+    {
+        if (string.IsNullOrWhiteSpace(subject) || subject == "career-record" || subject == "resume")
+            return "Career details";
+        if (subject.Equals("personal", StringComparison.OrdinalIgnoreCase))
+            return "Professional summary";
+        var separator = subject.IndexOf(':');
+        if (separator < 0 || !Guid.TryParse(subject[(separator + 1)..], out var id)) return subject;
+        return subject[..separator] switch
+        {
+            "experience" => source.Experience.FirstOrDefault(item => item.Id == id) is { } experience
+                ? $"{experience.Title} · {experience.Company}".Trim(' ', '·')
+                : "Experience",
+            "project" => source.Projects.FirstOrDefault(item => item.Id == id)?.Name ?? "Project",
+            "education" => source.Education.FirstOrDefault(item => item.Id == id) is { } education
+                ? string.Join(" · ", new[] { education.Degree, education.Institution }
+                    .Where(value => !string.IsNullOrWhiteSpace(value)))
+                : "Education",
+            _ => "Career details"
+        };
     }
 
     private static string? PublisherFromUri(string? uri) =>

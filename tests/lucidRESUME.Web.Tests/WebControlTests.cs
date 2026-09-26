@@ -135,6 +135,10 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
                     ref: "#leadership"
                     fingerprint:
                       text: "{{fingerprint}}"
+                  - id: imported-example-role
+                    type: source_ledger
+                    ref: ledger://experience/example-role
+                    title: Imported career record
             concepts:
               - id: typescript
                 type: skill
@@ -155,6 +159,8 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         var publicationPayload = await published.Content.ReadAsStringAsync();
         Assert.True(published.StatusCode == HttpStatusCode.OK,
             $"Expected career record publication to succeed, got {(int)published.StatusCode}: {publicationPayload}");
+        using var publicationJson = JsonDocument.Parse(publicationPayload);
+        var revision = publicationJson.RootElement.GetProperty("revision").GetString()!;
 
         using var compile = new HttpRequestMessage(HttpMethod.Post, "/lucidresume/api/compile");
         compile.Headers.Add("X-CSRF-TOKEN", token);
@@ -172,12 +178,21 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Contains("/api/export/", payload);
 
         using var json = JsonDocument.Parse(payload);
+        var publishedMarkdown = json.RootElement.GetProperty("publishedMarkdown").GetString()!;
+        var fullRecordUri = $"http://localhost/lucidresume/api/jobml/{revision}";
+        Assert.Contains($"Full JobML: <{fullRecordUri}>", publishedMarkdown);
+        Assert.Contains($"<{fullRecordUri}#example-role>", publishedMarkdown);
+        Assert.Contains("[Career Transcript]", publishedMarkdown);
         var docxUrl = json.RootElement.GetProperty("downloads").GetProperty("docx").GetString()!;
         var docx = await _client.GetByteArrayAsync(docxUrl);
         using var archive = new ZipArchive(new MemoryStream(docx), ZipArchiveMode.Read);
         using var documentReader = new StreamReader(archive.GetEntry("word/document.xml")!.Open());
         var documentXml = await documentReader.ReadToEndAsync();
         Assert.Contains(prose, documentXml);
+        using var relationshipsReader = new StreamReader(
+            archive.GetEntry("word/_rels/document.xml.rels")!.Open());
+        var relationshipsXml = await relationshipsReader.ReadToEndAsync();
+        Assert.Contains($"{fullRecordUri}#example-role", relationshipsXml);
 
         var fullJobMl = await _client.GetStringAsync("/lucidresume/api/jobml");
         Assert.Contains("profile: career_record", fullJobMl);

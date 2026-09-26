@@ -108,7 +108,25 @@ public static partial class StructuralExtractor
             }
         }
         if (clean.Length < 80)
+        {
             candidates.Add(new("title", clean, 0.7, "structural"));
+
+            // Common pasted advert header: title, company, location on three separate
+            // lines. The location-shaped third line keeps this conservative enough not
+            // to treat the first sentence of an ordinary advert as an employer name.
+            if (lines.Length >= 3)
+            {
+                var company = lines[1].TrimStart('#').Trim();
+                var location = lines[2].TrimStart('#').Trim();
+                var locationShaped = location.Contains(',') ||
+                    location.Contains("remote", StringComparison.OrdinalIgnoreCase) ||
+                    location.Contains("hybrid", StringComparison.OrdinalIgnoreCase) ||
+                    location.Contains("onsite", StringComparison.OrdinalIgnoreCase);
+                if (locationShaped && company.Length is >= 2 and <= 80 &&
+                    !company.EndsWith('.') && !company.Contains(':'))
+                    candidates.Add(new("company", company, 0.85, "structural"));
+            }
+        }
     }
 
     private static void ExtractLabelledFields(List<JdFieldCandidate> candidates, string[] lines)

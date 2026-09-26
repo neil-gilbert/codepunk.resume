@@ -4,7 +4,7 @@ Status: Experimental Draft
 
 Version: 0.1
 
-Last updated: 2026-09-24
+Last updated: 2026-09-26
 
 ## Abstract
 
@@ -57,8 +57,8 @@ The inputs to a projection are:
 - a valid full JobML document;
 - accepted claims;
 - prose evidence which resolves in the Markdown;
-- external, qualification, or imported résumé-source evidence already linked to
-  those claims.
+- external, qualification, or career-transcript evidence already linked to those
+  claims.
 
 The human prose remains authoritative about what the published résumé says. The
 application's career ledger remains canonical. Its full `career_record` JobML
@@ -109,9 +109,12 @@ Reference numbers identify evidence sources, not claims. Multiple claims which
 cite the same evidence identity MUST reuse the same number. A claim which cites
 several sources MAY carry several numbers.
 
-Several exact passages imported from the same résumé source MAY share one compact
-source citation. Their passage identities, locators, selectors, and checksums remain
-distinct in full JobML. This is publication compression, not evidence merging.
+Claims compiled from a fuller career transcript SHOULD cite the exact role,
+project, education, or other subject section from which they were selected. Several
+claims selected from the same subject MAY share that section reference. Claims from
+different subjects MUST NOT be collapsed into one generic transcript reference.
+Their passage identities, locators, selectors, and checksums remain distinct in
+full JobML. This is publication compression, not evidence merging.
 
 Numbers MUST be positive, consecutive integers assigned in order of first
 appearance in the prose.
@@ -131,9 +134,17 @@ without a URI MAY use the issuer and qualification identity.
 The bibliographic text SHOULD include the available author, title, publisher, and
 publication date. It MUST NOT invent missing metadata. Evidence type labels are
 human-readable forms such as `Article`, `Repository`, `Project`, or
-`Qualification`. `Resume Source` identifies an imported résumé source. It MAY
-omit a URI and name the source document, but MUST retain exact evidence identities
-in full JobML.
+`Qualification`. `Career Transcript` identifies the fuller human account from
+which role-specific prose was selected. It SHOULD name the exact subject, such as
+`Complete transcript: Senior Engineer, Example Ltd`. It MAY omit a URI when the
+transcript is not published, but MUST retain exact evidence identities in full
+JobML.
+
+A career-transcript citation establishes provenance and reversibility. It shows
+the fuller account maintained by the candidate, but does not by itself constitute
+independent verification by an employer. A repository, release, publication,
+qualification, or other external artefact can provide stronger support and SHOULD
+retain its more specific evidence type.
 
 Linked posts are evidence sources. A post can support authorship, demonstrated
 knowledge, or the reasoning it contains. Its presence MUST NOT silently establish
@@ -151,6 +162,16 @@ document:
 The URI MUST be absolute. A publisher copies it into the compact preamble without
 fetching or interpreting it. The endpoint SHOULD return the full JobML artifact
 or a content-negotiated equivalent which preserves all claim and evidence IDs.
+A compact career-transcript reference SHOULD append the stable subject identifier
+as a fragment, for example:
+
+```text
+https://example.net/jane.jobml#example-corp
+```
+
+The endpoint representation SHOULD expose matching fragment anchors in its human
+transcript. This lets a reader traverse from a compressed résumé statement to the
+specific fuller role or project rather than merely opening the top of the ledger.
 
 The endpoint is optional. A cJobML document remains parseable without network
 access or a full career record.
@@ -176,12 +197,15 @@ A conforming publisher performs these deterministic steps:
 
 1. read accepted claims from the full JobML document;
 2. resolve each claim's in-document prose evidence;
-3. select only external, qualification, or imported résumé-source evidence already
+3. select only external, qualification, or career-transcript evidence already
    attached to that claim;
-4. deduplicate sources by stable evidence identity, then normalised URI;
-5. assign numbers in first-prose-appearance order;
-6. append linked markers to the resolved prose spans;
-7. render the semantic preamble, optional full-JobML URI, and references.
+4. project a ledger source to the exact career-transcript subject and, when a full
+   endpoint exists, append its stable subject fragment;
+5. deduplicate sources by exact transcript section, stable evidence identity, then
+   normalised URI;
+6. assign numbers in first-prose-appearance order;
+7. append linked markers to the resolved prose spans;
+8. render the semantic preamble, optional full-JobML URI, and references.
 
 A publisher MUST NOT run NER, an LLM, embedding search, concept matching, or claim
 extraction during these steps. If an accepted prose reference cannot be resolved,
@@ -221,16 +245,20 @@ This cold-parser test supplements deterministic parsing. It does not replace it.
 
 ## 12. Compatibility evidence
 
-The lucidRESUME test fixture is exported to Markdown, DOCX, and PDF, then checked
-for identical prose, markers, references, and ledger URI. The PDF has also been
-submitted through the open-source [OpenResume](https://github.com/xitanggg/open-resume)
-browser parser. OpenResume recovered the normal résumé fields, inline marker,
-reference content, and URLs. Its fixed schema has no References category, so it
-classified the unfamiliar section as project content.
+The lucidRESUME test fixture is exported to Markdown, DOCX, and tagged PDF/UA, then
+checked for identical prose, markers, references, and ledger URI. The PDF has also
+been submitted through the open-source [OpenResume](https://github.com/xitanggg/open-resume)
+browser parser and both office formats through an independent plain-text parser.
+The latter found all six fixture role boundaries and paired five exactly; its simple
+delimiter rule split one multi-part title at a comma. OpenResume recovered the résumé text,
+ordinary fields, inline markers, reference content and URLs, but grouped several PDF
+roles because of its coordinate-gap heuristic. Its fixed schema has no References
+category, so it classified the unfamiliar section as project content.
 
 That result demonstrates content survival through one inspectable ATS-style
 parser. It is not a claim of universal compatibility with proprietary ATS
-products.
+products. Reproduction notes and the full result matrix are in the
+[ATS compatibility review](research/2026-09-26-resume-cv-ats-review.md).
 
 ## 13. Privacy and security
 

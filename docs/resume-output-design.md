@@ -79,6 +79,28 @@ choices shared by all three templates:
 The templates are presentation choices. They never change claims, evidence, JobML,
 or requirement coverage.
 
+## ATS-safe document structure
+
+Both office formats use the same conservative structure:
+
+- candidate identity occurs once, in the page-one body;
+- the advertised title is labelled `Target role` rather than presented as a role the
+  candidate already holds;
+- role, employer, location and dates have a stable delimited order;
+- achievement bullets are semantic lists, not typed bullet glyphs;
+- PDF output carries a PDF/UA-1 structure tree;
+- DOCX output uses named heading styles and Word numbering;
+- no tables, sidebars, text boxes, repeated headers or page counters carry résumé data.
+
+The evidence-linked form remains the default. A cJobML reference section is visible
+publication content, and compatible systems can follow its full JobML endpoint when
+one is configured. Unknown ATS portals should still be treated empirically: DOCX is
+the conservative first choice, and no open-source score is presented as a universal
+pass probability.
+
+The full research, parser limitations and reproduced results are recorded in
+[the ATS compatibility review](research/2026-09-26-resume-cv-ats-review.md).
+
 ## OpenAI configuration
 
 Set the provider and API key through Profile, or with environment variables:

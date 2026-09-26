@@ -72,7 +72,11 @@ public sealed class LlamaSharpExtractionService : ILlmExtractionService
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
-            var result = await _runtime.GenerateAsync(prompt, SystemMessage, maxTokens, timeout.Token);
+            // Extraction is a bounded parsing operation. Greedy decoding keeps the same
+            // document and prompt stable across repeated ledger builds; creative sampling
+            // remains available to explicit authoring workflows.
+            var result = await _runtime.GenerateAsync(
+                prompt, SystemMessage, maxTokens, timeout.Token, temperature: 0f);
             return string.IsNullOrWhiteSpace(result) ? null : result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)

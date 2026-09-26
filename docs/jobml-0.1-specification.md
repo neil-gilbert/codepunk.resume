@@ -3,7 +3,7 @@
 Status: Experimental Draft
 
 Version: 0.1
-Last updated: 2026-09-24
+Last updated: 2026-09-26
 
 This document defines JobML 0.1. The JSON Schema in
 [`jobml-0.1.schema.json`](jobml-0.1.schema.json) is the deterministic validation
@@ -163,6 +163,9 @@ backward compatibility.
 `document.full_jobml` MAY be an absolute URI that serves the full-resolution
 `career_record` JobML document. It is intended for role and compact projections
 whose editing and semantic metadata would be too large for the human document.
+Role projections SHOULD link transcript evidence to the exact entity in that
+document by appending the entity identifier as a URI fragment. The human portion
+of the served career record SHOULD expose the same fragment as an anchor.
 Processors MAY read the deprecated `document.complete_ledger` spelling, but MUST
 emit `document.full_jobml`.
 
@@ -256,8 +259,8 @@ an unreviewed derived claim as direct coverage.
 
 ## 11. Evidence
 
-Evidence types include `prose`, `project`, `repository`, `article`,
-`qualification`, and other external sources.
+Evidence types include `prose`, `career_transcript`, `project`, `repository`,
+`article`, `qualification`, and other external sources.
 
 In-document prose evidence SHOULD use all three mechanisms below:
 
@@ -290,6 +293,21 @@ External evidence MAY include `title`, `authors`, `publisher`, `published`, and
 reference. A linked article demonstrates only what its content and authorship
 support. It MUST NOT silently establish production use, employment, proficiency,
 or responsibility.
+
+`career_transcript` identifies the fuller human account from which a compressed
+role-specific passage was selected. Its title SHOULD identify the exact subject,
+and its URI SHOULD use the full JobML endpoint plus that subject's stable fragment:
+
+```yaml
+supported_by:
+  - type: career_transcript
+    title: "Complete transcript: Senior Engineer, Example Ltd"
+    uri: https://example.net/jane.jobml#example-corp
+```
+
+This reference makes the compression reversible and the full account visible. It
+is candidate-maintained provenance, not an assertion that an employer independently
+verified the account. Stronger external artefacts retain their own evidence types.
 
 ## 12. Evidence reconciliation
 

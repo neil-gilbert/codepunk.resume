@@ -114,6 +114,40 @@ public sealed class CompilerTests
     }
 
     [Fact]
+    public async Task Compiler_projects_ledger_provenance_to_exact_published_transcript_section()
+    {
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        file.Data.Claims.Single().Evidence.Add(new JobMlEvidence
+        {
+            Id = "imported-role-source",
+            Type = "source_ledger",
+            Ref = "ledger://experience/example-role",
+            Title = "Imported career record"
+        });
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            parser.Serialize(file), file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.",
+            new CompilationOptions
+            {
+                FullJobMlUri = "https://resume.example/lucidresume/api/jobml/revision"
+            });
+
+        var transcript = Assert.Single(result.ProjectedJobMl.Data.Claims.Single().Evidence,
+            evidence => evidence.Type == "career_transcript");
+        Assert.Equal("Complete transcript: VP Engineering, Example Ltd", transcript.Title);
+        Assert.Equal("https://resume.example/lucidresume/api/jobml/revision#example-role", transcript.Uri);
+        Assert.Contains("[Career Transcript]", result.PublishedMarkdown);
+        Assert.Contains("<https://resume.example/lucidresume/api/jobml/revision#example-role>",
+            result.PublishedMarkdown);
+        Assert.Contains("Full JobML: <https://resume.example/lucidresume/api/jobml/revision>",
+            result.PublishedMarkdown);
+    }
+
+    [Fact]
     public async Task Compiler_collapses_near_duplicate_imported_prose_in_one_section()
     {
         var parser = new JobMlParser();

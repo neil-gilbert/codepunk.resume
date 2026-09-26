@@ -235,8 +235,12 @@ model to make the text look human or to invent missing coverage.
 The saved source artifact contains normal Markdown followed by one fenced `jobml`
 block. Published Markdown, Word, and PDF
 use inline numbered citations and a compact cJobML **References** section instead.
-The compact section can link to a published full JobML endpoint and remains
-readable without JobML-aware software. Role projections include it by default;
+The compact section can link each cited statement to the exact role, project, or
+other evidence section in a published full JobML career transcript and remains
+readable without JobML-aware software. A transcript link shows the fuller account
+you maintain; it is provenance, not automatic employer verification. Repositories,
+articles, qualifications, releases, and other external evidence keep their own
+more specific labels. Role projections include cJobML by default;
 clear **Include compact cJobML references** in Project when a human-only copy is
 needed.
 
@@ -396,14 +400,19 @@ New jobs appear as notifications in the sidebar.
 <!-- help:matching--gap-analysis -->
 ## Matching & Gap Analysis
 
-### How Match Scores Work
+### How Semantic Evidence Coverage Works
 
-The overall fit score combines:
+The displayed percentage measures extracted requirement terms which can be connected
+to evidence in your ledger. It combines required and preferred term coverage.
 
 - **Required skill coverage** - heavily weighted
 - **Preferred skill coverage** - moderate weight
-- **Evidence strength** - are your matches backed by strong evidence?
-- **Years alignment** - do your calculated years meet the JD requirements?
+
+It is not an eligibility or overall job-fit score. It does not prove that you meet
+degree requirements, prior-title requirements, organization scale, hiring scope,
+years at a specified level, or another hard gate. Review the actual evidence and gaps
+before treating a role as a strong match. Evidence strength and calculated years are
+shown separately rather than silently folded into the percentage.
 
 ### The Skill Graph
 
@@ -417,7 +426,7 @@ Your skills form a graph where edges connect skills that appear together in the 
 
 The career planner generates job search queries from your skill communities:
 
-- **Strong Fit** - queries targeting your core cluster
+- **Strong Evidence Overlap** - queries targeting your core cluster
 - **Growth Target** - queries that stretch into adjacent clusters
 - **Stretch Goal** - further afield but reachable
 - **Bridge Role** - roles that connect two of your clusters

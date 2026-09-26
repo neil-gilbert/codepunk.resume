@@ -117,10 +117,15 @@ public static class CJobMlProjector
         !IsProseEvidence(evidence) &&
         (Uri.TryCreate(evidence.Uri, UriKind.Absolute, out _) ||
          string.Equals(evidence.Type, "qualification", StringComparison.OrdinalIgnoreCase) ||
-         IsResumeSource(evidence));
+         IsResumeSource(evidence) || IsCareerTranscript(evidence));
 
     private static bool IsResumeSource(JobMlEvidence evidence) =>
         string.Equals(evidence.Type, "source_ledger", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(evidence.Id) &&
+        !string.IsNullOrWhiteSpace(evidence.Title);
+
+    private static bool IsCareerTranscript(JobMlEvidence evidence) =>
+        string.Equals(evidence.Type, "career_transcript", StringComparison.OrdinalIgnoreCase) &&
         !string.IsNullOrWhiteSpace(evidence.Id) &&
         !string.IsNullOrWhiteSpace(evidence.Title);
 
@@ -128,6 +133,9 @@ public static class CJobMlProjector
     {
         // A compact citation identifies the imported document. Full JobML retains the
         // exact evidence ID, locator, selector and checksum for each supporting passage.
+        if (IsCareerTranscript(evidence) && !string.IsNullOrWhiteSpace(evidence.Uri))
+            return $"career-transcript:{NormalizeTranscriptUri(evidence.Uri)}";
+        if (IsCareerTranscript(evidence)) return $"career-transcript:{evidence.Title!.Trim()}";
         if (IsResumeSource(evidence)) return $"resume-source:{evidence.Title!.Trim()}";
         if (!string.IsNullOrWhiteSpace(evidence.Id)) return $"id:{evidence.Id.Trim()}";
         if (!string.IsNullOrWhiteSpace(evidence.Uri)) return $"uri:{NormalizeUri(evidence.Uri)}";
@@ -138,6 +146,15 @@ public static class CJobMlProjector
         Uri.TryCreate(uri, UriKind.Absolute, out var parsed)
             ? parsed.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped).TrimEnd('/')
             : uri.Trim();
+
+    private static string NormalizeTranscriptUri(string uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed)) return uri.Trim();
+        var documentUri = parsed.GetComponents(UriComponents.HttpRequestUrl, UriFormat.UriEscaped).TrimEnd('/');
+        return string.IsNullOrWhiteSpace(parsed.Fragment)
+            ? documentUri
+            : $"{documentUri}#{parsed.Fragment.TrimStart('#')}";
+    }
 
     public static string FormatReference(int number, JobMlEvidence evidence)
     {

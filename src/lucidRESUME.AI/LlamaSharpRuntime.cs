@@ -35,7 +35,8 @@ public sealed partial class LlamaSharpRuntime : IDisposable
         string prompt,
         string systemMessage,
         int? maxTokens = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        float? temperature = null)
     {
         await EnsureLoadedAsync(ct);
         await _inferenceGate.WaitAsync(ct);
@@ -51,9 +52,10 @@ public sealed partial class LlamaSharpRuntime : IDisposable
                 MaxTokens = maxTokens ?? _options.MaxTokens,
                 SamplingPipeline = new DefaultSamplingPipeline
                 {
-                    Temperature = _options.Temperature,
+                    Temperature = temperature ?? _options.Temperature,
                     TopP = 0.9f,
-                    RepeatPenalty = 1.05f
+                    RepeatPenalty = 1.05f,
+                    Seed = temperature == 0f ? 13_371u : 0xFFFFFFFFu
                 }
             };
 

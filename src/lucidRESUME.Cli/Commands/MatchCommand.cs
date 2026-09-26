@@ -60,7 +60,8 @@ public static class MatchCommand
             var matchResult = await matcher.MatchAsync(resumeLedger, jdLedger, ct, resumeDoc: resume);
 
             Console.WriteLine("\n=== MATCH RESULTS ===");
-            Console.WriteLine($"Overall Fit: {matchResult.OverallFit:P0}");
+            Console.WriteLine($"Semantic Evidence Coverage: {matchResult.OverallFit:P0}");
+            Console.WriteLine("Note: coverage is not an eligibility, seniority, or overall job-fit score.");
             Console.WriteLine($"Required Coverage: {matchResult.RequiredCoverage:P0}");
             Console.WriteLine($"Preferred Coverage: {matchResult.PreferredCoverage:P0}");
             Console.WriteLine($"Avg Evidence Strength: {matchResult.AverageEvidenceStrength:F2}");

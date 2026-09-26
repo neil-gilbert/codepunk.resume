@@ -7,6 +7,55 @@ namespace lucidRESUME.Core.Tests.Parsing;
 public class MarkdownSectionParserTests
 {
     [Fact]
+    public void PopulateSections_StopsEducationAtUnknownPeerHeading()
+    {
+        const string markdown = """
+                                # Avery Example
+
+                                ## Education
+
+                                ### BSc Computer Science | Example University
+
+                                ## Selected Public Evidence
+
+                                - https://example.test/article
+                                """;
+        var resume = ResumeDocument.Create("resume.md", "text/markdown", markdown.Length);
+
+        MarkdownSectionParser.PopulateSections(resume, markdown);
+
+        var education = Assert.Single(resume.Education);
+        Assert.Equal("BSc Computer Science", education.Degree);
+        Assert.Equal("Example University", education.Institution);
+    }
+
+    [Fact]
+    public void ParsesMarkdownProjectsWithExternalEvidenceAndTechnologies()
+    {
+        var resume = ResumeDocument.Create("projects.md", "text/markdown", 1);
+
+        MarkdownSectionParser.PopulateSections(resume, """
+            # Jane Smith
+
+            ## Projects
+
+            ### Atlas Retrieval
+
+            https://github.com/example/atlas
+
+            Built an evidence-grounded retrieval platform with deterministic citations.
+
+            **Technologies:** C#, RAG, PostgreSQL
+            """);
+
+        var project = Assert.Single(resume.Projects);
+        Assert.Equal("Atlas Retrieval", project.Name);
+        Assert.Equal("https://github.com/example/atlas", project.Url?.TrimEnd('/'));
+        Assert.Equal("Built an evidence-grounded retrieval platform with deterministic citations.", project.Description);
+        Assert.Equal(["C#", "RAG", "PostgreSQL"], project.Technologies);
+    }
+
+    [Fact]
     public void Numeric_date_to_present_role_is_not_split_into_company_and_title()
     {
         var resume = ResumeDocument.Create("numeric-date.md", "text/markdown", 100);
@@ -36,6 +85,36 @@ public class MarkdownSectionParserTests
             "# Jane Smith {#jane-smith}\n\n## Summary {#summary}\n\nPlatform engineer.");
 
         Assert.Equal("Jane Smith", resume.Personal.FullName);
+    }
+
+    [Fact]
+    public void PopulateSections_StripsCompactCitationsFromParsedProjectionButKeepsEvidenceSectionsSeparate()
+    {
+        const string markdown = """
+            # Jane Smith
+
+            ## Summary {#summary}
+            Platform engineer. [[1]](#ref-1)
+
+            ## Experience {#experience}
+            ### Platform Engineer - Example Corp {#experience-example}
+            *Jan 2022 – Present*
+            - Built a reliable platform. [[2]](#ref-2)
+
+            ## References
+            cJobML 0.1: xref [n] in prose resolves to ref [n].
+            <a id="ref-1"></a>[1] “Complete transcript: Professional summary.” [Career Transcript]
+            <a id="ref-2"></a>[2] “Complete transcript: Platform Engineer · Example Corp.” [Career Transcript]
+            """;
+        var resume = ResumeDocument.Create("projection.md", "text/markdown", markdown.Length);
+
+        MarkdownSectionParser.PopulateSections(resume, markdown);
+
+        Assert.Equal("Platform engineer.", resume.Personal.Summary);
+        var experience = Assert.Single(resume.Experience);
+        Assert.Equal("Platform Engineer", experience.Title);
+        Assert.Equal("Example Corp", experience.Company);
+        Assert.Equal("Built a reliable platform.", Assert.Single(experience.Achievements));
     }
 
     // Minimal resume markdown matching the Docling output format
@@ -170,7 +249,7 @@ public class MarkdownSectionParserTests
     {
         const string markdown = """
             # Jane Smith
-            Edinburgh, Scotland, UK | jane@example.com | linkedin.com/in/jane | github.com/jane | jane.dev
+            Edinburgh, Scotland, UK | jane@example.com | +44 7700 900123 | linkedin.com/in/jane | github.com/jane | jane.dev
 
             ## Profile
             Platform engineer.
@@ -187,6 +266,7 @@ public class MarkdownSectionParserTests
         MarkdownSectionParser.PopulateSections(resume, markdown);
 
         Assert.Equal("jane@example.com", resume.Personal.Email);
+        Assert.Equal("+44 7700 900123", resume.Personal.Phone);
         Assert.Equal("Edinburgh, Scotland, UK", resume.Personal.Location);
         Assert.Equal("linkedin.com/in/jane", resume.Personal.LinkedInUrl);
         Assert.Equal("github.com/jane", resume.Personal.GitHubUrl);

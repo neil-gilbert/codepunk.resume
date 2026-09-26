@@ -46,7 +46,7 @@ public sealed class ResumeParser : IResumeParser
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".pdf", ".docx", ".doc", ".txt"
+        ".pdf", ".docx", ".doc", ".txt", ".md", ".markdown"
     };
 
     public Task<ResumeDocument> ParseAsync(string filePath, CancellationToken ct = default) =>

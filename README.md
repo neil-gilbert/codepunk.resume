@@ -38,8 +38,12 @@ bounded editing stage may tighten those selected passages with local grug 9B or
 OpenAI. Each pass is rejected if it introduces claims, evidence IDs, numbers, or
 sections outside the deterministic selection. The result exports as one
 evidence-linked artifact in Markdown, Word, or PDF. Published documents use
-inline numbered citations and a compact cJobML References section. Full JobML,
-including drift and editing metadata, can be published at a linked endpoint.
+inline numbered citations and a compact cJobML References section. A citation can
+open the exact role or project in the published full career transcript. Full
+JobML retains the passage selectors, drift hashes, review state, and semantic
+metadata omitted from the compact document. Transcript links expose the fuller
+candidate-maintained account; repositories, articles, releases, qualifications,
+and similar artefacts remain distinguishable as stronger external evidence.
 See [the design article](https://mostlylucid.net/blog/the-problem-with-resumes).
 See [resume output and template design](docs/resume-output-design.md) for the full flow,
 template rationale, and configuration.
@@ -168,6 +172,8 @@ Every major job site wants your email, your browsing history, and permission to 
 - Semantic compression: 13 roles -> 6 relevant -> filtered to evidence-backed bullets
 - Optionally runs bounded tightening and human-voice passes over selected source prose
 - Renders Markdown and JobML together without output-time evidence re-inference
+- Links compressed statements to the exact source role or project in the complete transcript
+- Distinguishes candidate-maintained transcript provenance from external supporting artefacts
 - Preserves human-owned prose while JobML carries explicit machine detail
 
 ### Embeddable web compiler
@@ -214,7 +220,10 @@ headers. API keys remain server-side. See the
 Seven job board adapters searched in parallel (Adzuna, Reed, Findwork, Arbeitnow, JoinRise, Jobicy, Remotive). Near-duplicate detection via embedding similarity. Hoover role flagging.
 
 ### Export
-JSON Resume (standard schema), Markdown, **DOCX** (Word via OpenXml), and **PDF** ([QuestPDF](https://www.questpdf.com/) — professional formatting, cross-platform).
+JSON Resume (standard schema), Markdown, **DOCX** (Word via OpenXml), and tagged
+**PDF/UA** ([QuestPDF](https://www.questpdf.com/)). DOCX uses real Word lists and
+named headings; both office formats keep identity in the document body and avoid
+tables, sidebars, text boxes and repeated résumé headers.
 
 ### Documentation
 - [Release & Archive Guide](docs/release.md) - release workflow, platform archives, and single-page docs archive.
@@ -223,6 +232,7 @@ JSON Resume (standard schema), Markdown, **DOCX** (Word via OpenXml), and **PDF*
 - [Jev-assisted Parsing and Benchmarking](docs/jev-parsing-experiment.md) - bounded NER decisions, privacy, drift records, and reproducible benchmarks.
 - [JobML 0.1 Specification](docs/jobml-0.1-specification.md) - normative document model, evidence reconciliation, review states, and extensions.
 - [cJobML 0.1 Publication Projection](docs/cjobml-0.1-specification.md) - compact numbered citations, references, full-ledger endpoints, and one-pass parsing.
+- [Resume and ATS Compatibility Review](docs/research/2026-09-26-resume-cv-ats-review.md) - sourced format guidance, reproduced parser results, limitations, and the validation plan.
 - [JobML Web Compiler](docs/jobml-web-compiler.md) - complete master publication, deterministic role projection, bounded prose editing, and ASP.NET Core integration.
 - [Chrome Evidence Filler](extensions/lucidresume-chrome/README.md) - local Prompt API field mapping from a published full JobML endpoint, with review and honest gaps.
 - [Chrome Evidence Filler Design](docs/chrome-evidence-filler.md) - researched browser APIs, deterministic projection rules, privacy, threat model, and verification.
@@ -237,12 +247,12 @@ lucidresume evidence       --resume cv.docx [--output ledger.json]
 lucidresume match          --resume cv.docx --job "JD text"
 lucidresume compound-match --resume cv.docx --jobs-dir jds/
 lucidresume explain        --resume cv.docx --job "JD text"
-lucidresume tailor         --resume cv.docx --job "JD text" [--output projected.md]
+lucidresume tailor         --resume cv.docx --job "JD text" [--full-jobml https://example.net/career.jobml] [--output projected.md]
 lucidresume drift          --resume1 old.docx --resume2 new.docx
 lucidresume export         --file cv.docx --format pdf|docx|markdown|json
 lucidresume validate       --resume cv.docx
 lucidresume fix            --resume cv.docx [--output fixed.md]
-lucidresume generate       --resume cv.docx --prompt "draft a 2 page cloud resume"
+lucidresume generate       --resume cv.docx --prompt "draft a 2 page cloud resume" [--full-jobml https://example.net/career.jobml]
 lucidresume anonymize      --resume cv.docx [--output anon.json]
 lucidresume rank           --dir resumes/ --job "JD text"
 lucidresume search         --prompt "senior .NET developer remote"
@@ -260,9 +270,10 @@ lucidresume jobml link-post --file resume.jobml.md --claim claim-id --url https:
 
 Role projections include compact cJobML citations in Markdown, Word, and PDF by
 default. Pass `--cjobml false` to `tailor`, `generate`, or `render` for a
-human-only copy. Compact references can cite imported résumé sources and public
-evidence without copying full passages, selectors, or drift hashes out of the
-full JobML career record.
+human-only copy. `--full-jobml` gives transcript references an exact deep link.
+Compact references can cite transcript sections and public evidence without
+copying full passages, selectors, or drift hashes out of the full JobML career
+record.
 
 ---
 

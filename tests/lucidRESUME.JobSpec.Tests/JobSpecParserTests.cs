@@ -48,6 +48,27 @@ public class JobSpecParserTests
     }
 
     [Fact]
+    public async Task ParseFromText_ExtractsThreeLineAdvertHeader()
+    {
+        var text = """
+            Engineering Technical Lead
+            Planet DDS
+            Glasgow, Scotland, United Kingdom. Hybrid.
+
+            Required skills
+            - .NET
+            - DDS
+            """;
+
+        var job = await _parser.ParseFromTextAsync(text);
+
+        Assert.Equal("Engineering Technical Lead", job.Title);
+        Assert.Equal("Planet DDS", job.Company);
+        Assert.DoesNotContain(job.RequiredSkills, skill =>
+            string.Equals(skill, "DDS", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task ParseFromText_ExtractsSalary()
     {
         var text = "Salary: £60,000 - £80,000 per annum. Location: London.";

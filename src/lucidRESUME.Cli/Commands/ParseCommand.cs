@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace lucidRESUME.Cli.Commands;
 
 /// <summary>
-/// lucidresume parse --file resume.pdf [--output result.json]
+/// lucidresume parse --file resume.md [--output result.json]
 /// Parses a resume file and outputs the extracted schema as JSON.
 /// </summary>
 public static class ParseCommand
@@ -17,7 +17,10 @@ public static class ParseCommand
 
     public static Command Build()
     {
-        var fileOpt = new Option<FileInfo?>("--file") { Description = "Resume file to parse (PDF or DOCX)" };
+        var fileOpt = new Option<FileInfo?>("--file")
+        {
+            Description = "Resume file to parse (Markdown, PDF, DOCX, DOC, or TXT)"
+        };
         fileOpt.Aliases.Add("-f");
         var directoryOpt = new Option<DirectoryInfo?>("--resume-dir") { Description = "Directory of resume sources to merge into one evidence ledger" };
 
@@ -39,9 +42,10 @@ public static class ParseCommand
             var output = result.GetValue(outputOpt);
             var config = result.GetValue(configOpt);
 
-            if (file is not null && file.Extension.ToLowerInvariant() is not ".pdf" and not ".docx" and not ".doc" and not ".txt")
+            if (file is not null && file.Extension.ToLowerInvariant() is not ".pdf" and not ".docx" and not ".doc"
+                and not ".txt" and not ".md" and not ".markdown")
             {
-                Console.Error.WriteLine($"Unsupported file type '{file.Extension}'. Supported formats: .doc, .docx, .pdf, .txt");
+                Console.Error.WriteLine($"Unsupported file type '{file.Extension}'. Supported formats: .doc, .docx, .md, .markdown, .pdf, .txt");
                 return;
             }
 

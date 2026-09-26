@@ -128,7 +128,7 @@ public sealed partial class ApplyPageViewModel : ViewModelBase
 
             CompressionStats = $"{compressed.IncludedRoleCount}/{compressed.OriginalRoleCount} roles, " +
                 $"{compressed.MatchedSkillCount}/{compressed.OriginalSkillCount} requirements, " +
-                $"fit: {compressed.OverallFit:P0}" +
+                $"semantic evidence coverage: {compressed.OverallFit:P0} (not eligibility)" +
                 (compressed.Gaps.Count > 0 ? $", gaps: {string.Join(", ", compressed.Gaps.Take(3))}" : "");
 
             // Step 2: Render the selected ledger records without re-inference.

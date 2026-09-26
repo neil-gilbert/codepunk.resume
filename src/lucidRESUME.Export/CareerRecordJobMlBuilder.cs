@@ -41,7 +41,7 @@ public sealed class CareerRecordJobMlBuilder(
 
         var subjects = claims.Select(claim => claim.SubjectId ?? "career-record")
             .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var entityIds = subjects.ToDictionary(subject => subject, subject => StableId("entity", subject),
+        var entityIds = subjects.ToDictionary(subject => subject, StableEntityId,
             StringComparer.OrdinalIgnoreCase);
         var claimIds = claims.ToDictionary(claim => claim.Id, claim => StableId("claim", claim.Id),
             StringComparer.OrdinalIgnoreCase);
@@ -271,6 +271,8 @@ public sealed class CareerRecordJobMlBuilder(
             return "summary";
         return claim.Kind;
     }
+
+    internal static string StableEntityId(string subject) => StableId("entity", subject);
 
     private static string StableId(string prefix, string value) =>
         $"{prefix}-{EvidenceLedgerBuilder.Slug(value)}-{EvidenceLedgerBuilder.FastHash(value)[^8..]}";

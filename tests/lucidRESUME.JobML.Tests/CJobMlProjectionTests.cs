@@ -132,6 +132,61 @@ public sealed class CJobMlProjectionTests
     }
 
     [Fact]
+    public void Projection_DoesNotMergeDifferentTranscriptSectionsOnSameEndpoint()
+    {
+        var full = AcceptedFile();
+        var firstClaim = full.Data.Claims.Single();
+        firstClaim.Evidence.RemoveAll(evidence =>
+            !string.Equals(evidence.Type, "prose", StringComparison.OrdinalIgnoreCase));
+        firstClaim.Evidence.Add(new JobMlEvidence
+        {
+            Id = "transcript-role-one",
+            Type = "career_transcript",
+            Uri = "https://example.com/jane.jobml#role-one",
+            Title = "Complete transcript: Role One"
+        });
+
+        const string secondPassage = "Led another platform team.";
+        full = full with { Markdown = full.Markdown + $"\n\n## Role Two {{#role-two}}\n\n{secondPassage}" };
+        full.Data.Entities.Add(new JobMlEntity
+            { Id = "role-two", Type = "experience", Name = "Role Two", Source = "#role-two" });
+        full.Data.Claims.Add(new JobMlClaim
+        {
+            Id = "role-two-claim",
+            Subject = "role-two",
+            Statement = secondPassage,
+            Review = "accepted",
+            Evidence =
+            [
+                new JobMlEvidence
+                {
+                    Type = "prose", Ref = "#role-two:p1",
+                    Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(secondPassage) },
+                    Selector = new JobMlTextSelector { Exact = secondPassage }
+                },
+                new JobMlEvidence
+                {
+                    Id = "transcript-role-two",
+                    Type = "career_transcript",
+                    Uri = "https://example.com/jane.jobml#role-two",
+                    Title = "Complete transcript: Role Two"
+                }
+            ]
+        });
+
+        var compact = CJobMlProjector.Project(full);
+        var parsed = CJobMlParser.Parse(compact.Markdown);
+
+        Assert.Equal(2, compact.References.Count);
+        Assert.Contains("#role-one", compact.References[0].Evidence.Uri);
+        Assert.Contains("#role-two", compact.References[1].Evidence.Uri);
+        Assert.Equal([1], compact.Anchors[0].ReferenceNumbers);
+        Assert.Equal([2], compact.Anchors[1].ReferenceNumbers);
+        Assert.Equal(["role-one", "role-two"], parsed.References
+            .Select(reference => reference.Uri!.Fragment.TrimStart('#')).ToArray());
+    }
+
+    [Fact]
     public void Parser_RejectsUnresolvedXref()
     {
         var compact = CJobMlProjector.Project(AcceptedFile()).Markdown
