@@ -42,11 +42,6 @@ public sealed partial class LlamaSharpRuntime : IDisposable
         await _inferenceGate.WaitAsync(ct);
         try
         {
-            var executor = new StatelessExecutor(_weights!, _parameters!)
-            {
-                ApplyTemplate = true,
-                SystemMessage = systemMessage
-            };
             var inference = new InferenceParams
             {
                 MaxTokens = maxTokens ?? _options.MaxTokens,
@@ -60,8 +55,30 @@ public sealed partial class LlamaSharpRuntime : IDisposable
             };
 
             var output = new StringBuilder();
-            await foreach (var token in executor.InferAsync(prompt, inference, ct))
-                output.Append(token);
+            try
+            {
+                var executor = new StatelessExecutor(_weights!, _parameters!)
+                {
+                    ApplyTemplate = true,
+                    SystemMessage = systemMessage
+                };
+                await foreach (var token in executor.InferAsync(prompt, inference, ct))
+                    output.Append(token);
+            }
+            catch (Exception exception) when (
+                _models.ModelId.Contains("gemma-4", StringComparison.OrdinalIgnoreCase) &&
+                exception.Message.Contains("llama_chat_apply_template", StringComparison.OrdinalIgnoreCase))
+            {
+                // Gemma 4's canonical Jinja template uses constructs not understood by
+                // the llama.cpp template evaluator embedded in LLamaSharp 0.27. The
+                // text-only turn format is stable and keeps the same system/user roles.
+                var executor = new StatelessExecutor(_weights!, _parameters!) { ApplyTemplate = false };
+                var formatted = $"<|turn>system\n{systemMessage.Trim()}<turn|>\n" +
+                                $"<|turn>user\n{prompt.Trim()}<turn|>\n" +
+                                "<|turn>model\n<|channel>thought\n<channel|>";
+                await foreach (var token in executor.InferAsync(formatted, inference, ct))
+                    output.Append(token);
+            }
 
             return RemoveThinking(output.ToString()).Trim();
         }
@@ -109,14 +126,21 @@ public sealed partial class LlamaSharpRuntime : IDisposable
     internal static string RemoveThinking(string value)
     {
         var cleaned = ThinkBlockRegex().Replace(value, string.Empty);
+        cleaned = GemmaThinkBlockRegex().Replace(cleaned, string.Empty);
         var unclosed = cleaned.IndexOf("<think>", StringComparison.OrdinalIgnoreCase);
         if (unclosed >= 0)
             cleaned = cleaned[..unclosed];
-        return cleaned.Replace("</think>", string.Empty, StringComparison.OrdinalIgnoreCase);
+        return cleaned.Replace("</think>", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("<|channel>final", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("<channel|>", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("<turn|>", string.Empty, StringComparison.OrdinalIgnoreCase);
     }
 
     [GeneratedRegex("<think>.*?</think>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex ThinkBlockRegex();
+
+    [GeneratedRegex("<\\|channel>thought.*?<channel\\|>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex GemmaThinkBlockRegex();
 
     public void Dispose()
     {

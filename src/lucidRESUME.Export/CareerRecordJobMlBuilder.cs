@@ -269,7 +269,12 @@ public sealed class CareerRecordJobMlBuilder(
     {
         var builder = new StringBuilder();
         builder.Append("# ").AppendLine(transcript.Personal.FullName ?? "Complete Career Transcript").AppendLine();
-        var contact = new[] { transcript.Personal.Email, transcript.Personal.Phone, transcript.Personal.Location,
+        var displayedPhone = string.IsNullOrWhiteSpace(transcript.Personal.Phone)
+            ? null
+            : string.IsNullOrWhiteSpace(transcript.Personal.ContactPreference)
+                ? transcript.Personal.Phone
+                : $"{transcript.Personal.Phone} - {transcript.Personal.ContactPreference} -";
+        var contact = new[] { transcript.Personal.Email, displayedPhone, transcript.Personal.Location,
                 transcript.Personal.LinkedInUrl, transcript.Personal.GitHubUrl, transcript.Personal.WebsiteUrl }
             .Where(value => !string.IsNullOrWhiteSpace(value));
         builder.AppendLine(string.Join(" · ", contact));

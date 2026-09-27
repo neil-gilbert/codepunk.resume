@@ -34,6 +34,25 @@ public sealed class ResumeCompositionProviderTests
         Assert.DoesNotContain("invent", input, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Local_provider_recovers_only_complete_sections_from_truncated_json()
+    {
+        const string truncated = """
+            model preamble
+            {"sections":[
+              {"sectionId":"summary","text":"Builder with a {practical} focus."},
+              {"sectionId":"role","text":"Led delivery with an escaped \"quote\"."},
+              {"sectionId":"unfinished","text":"This must not be accepted
+            """;
+
+        var result = LlamaSharpResumeCompositionProvider.ParseBatch(truncated);
+
+        Assert.Equal(2, result.Sections.Count);
+        Assert.Equal("summary", result.Sections[0].SectionId);
+        Assert.Equal("Led delivery with an escaped \"quote\".", result.Sections[1].Text);
+        Assert.Contains(result.Warnings, warning => warning.Contains("truncated"));
+    }
+
     private sealed class CaptureHandler : HttpMessageHandler
     {
         public string? RequestBody { get; private set; }

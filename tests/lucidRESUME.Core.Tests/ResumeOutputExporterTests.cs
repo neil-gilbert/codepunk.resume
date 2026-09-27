@@ -166,6 +166,31 @@ public sealed class ResumeOutputExporterTests
     }
 
     [Fact]
+    public async Task Human_exports_render_contact_preference_after_phone_without_corrupting_phone_value()
+    {
+        var resume = ResumeDocument.Create("contact.md", "text/markdown", 0);
+        resume.Personal.FullName = "Scott Galloway";
+        resume.Personal.Email = "scott@mostlylucid.net";
+        resume.Personal.Phone = "07498479614";
+        resume.Personal.ContactPreference = "please email in the first instance";
+
+        var markdown = System.Text.Encoding.UTF8.GetString(await new MarkdownExporter().ExportAsync(resume));
+        var docx = await new DocxExporter().ExportAsync(resume);
+        var pdf = await new PdfExporter().ExportAsync(resume);
+        using var stream = new MemoryStream(docx);
+        using var document = WordprocessingDocument.Open(stream, false);
+        using var pdfDocument = PdfDocument.Open(pdf);
+        var pdfText = string.Join("\n", pdfDocument.GetPages().Select(page => page.Text));
+
+        Assert.Contains("scott@mostlylucid.net", markdown);
+        Assert.Contains("07498479614 - please email in the first instance -", markdown);
+        Assert.Contains("07498479614 - please email in the first instance -",
+            document.MainDocumentPart!.Document!.Body!.InnerText);
+        Assert.Contains("07498479614 - please email in the first instance -", pdfText);
+        Assert.Equal("07498479614", resume.Personal.Phone);
+    }
+
+    [Fact]
     public void ArtifactBuilder_CreatesReversibleEvidenceBackedOutput()
     {
         var source = ResumeDocument.Create("source.md", "text/markdown", 1);

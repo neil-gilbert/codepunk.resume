@@ -81,6 +81,16 @@ public sealed class ResumeCompositionOrchestrator(
         if (provider is null) return (source, false, null, ["No requested composition provider was available; retained selected human prose."]);
 
         IReadOnlyList<CompositionBlock> current = source;
+        var editableSectionIds = manifest.Sections
+            .Where(section => !section.Kind.Equals("summary", StringComparison.OrdinalIgnoreCase))
+            .Select(section => section.SectionId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (editableSectionIds.Count == 0) return (source, false, null, []);
+        var editableSource = source.Where(block => editableSectionIds.Contains(block.SectionId)).ToList();
+        var editableManifest = manifest with
+        {
+            Sections = manifest.Sections.Where(section => editableSectionIds.Contains(section.SectionId)).ToList()
+        };
         var warnings = new List<string>();
         var acceptedPass = false;
         foreach (var pass in new[] { CompositionPass.Tighten, CompositionPass.HumanVoice })
@@ -88,15 +98,47 @@ public sealed class ResumeCompositionOrchestrator(
             try
             {
                 var draft = await provider.RunPassAsync(
-                    new CompositionPassRequest(pass, jobDescription, manifest, source, current), cancellationToken);
-                var errors = validator.Validate(draft, source, manifest);
-                if (errors.Count > 0)
+                    new CompositionPassRequest(pass, jobDescription, editableManifest, editableSource,
+                        current.Where(block => editableSectionIds.Contains(block.SectionId)).ToList()), cancellationToken);
+                var returned = draft.Blocks
+                    .GroupBy(block => block.SectionId, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+                var next = new List<CompositionBlock>(current.Count);
+                var acceptedSections = 0;
+                foreach (var sourceBlock in source)
                 {
-                    warnings.Add($"Discarded {pass} pass: {string.Join(" ", errors)}");
-                    continue;
+                    var currentBlock = current.Single(block =>
+                        block.SectionId.Equals(sourceBlock.SectionId, StringComparison.OrdinalIgnoreCase));
+                    if (!editableSectionIds.Contains(sourceBlock.SectionId))
+                    {
+                        next.Add(currentBlock);
+                        continue;
+                    }
+                    if (!returned.TryGetValue(sourceBlock.SectionId, out var candidates) || candidates.Count != 1)
+                    {
+                        next.Add(currentBlock);
+                        warnings.Add($"Discarded {pass} edit for '{sourceBlock.SectionId}': section was missing or duplicated.");
+                        continue;
+                    }
+                    var packet = editableManifest.Sections.Single(section =>
+                        section.SectionId.Equals(sourceBlock.SectionId, StringComparison.OrdinalIgnoreCase));
+                    var sectionManifest = manifest with { Sections = [packet] };
+                    var errors = validator.Validate(
+                        new CompositionDraft([candidates[0]], draft.Warnings), [sourceBlock], sectionManifest);
+                    if (errors.Count > 0)
+                    {
+                        next.Add(currentBlock);
+                        warnings.Add($"Discarded {pass} edit for '{sourceBlock.SectionId}': {string.Join(" ", errors)}");
+                        continue;
+                    }
+                    next.Add(candidates[0]);
+                    acceptedSections++;
                 }
-                current = draft.Blocks;
-                acceptedPass = true;
+                foreach (var unexpected in returned.Keys.Where(id =>
+                             source.All(block => !block.SectionId.Equals(id, StringComparison.OrdinalIgnoreCase))))
+                    warnings.Add($"Discarded {pass} edit for unknown section '{unexpected}'.");
+                current = next;
+                acceptedPass |= acceptedSections > 0;
                 warnings.AddRange(draft.Warnings);
             }
             catch (Exception ex)

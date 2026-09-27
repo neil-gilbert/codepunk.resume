@@ -35,7 +35,8 @@ public sealed record EvidencePacket(
     string Intent,
     int MaximumWords,
     IReadOnlyList<SelectedClaim> Claims,
-    IReadOnlyList<string> RequirementIds);
+    IReadOnlyList<string> RequirementIds,
+    string Kind = "experience");
 
 public sealed record ProjectionManifest(
     string SourceRevision,
@@ -78,8 +79,9 @@ public interface IResumeCompositionProvider
 public sealed class CompilationOptions
 {
     public int MaximumClaims { get; set; } = 12;
-    public int MaximumClaimsPerSubject { get; set; } = 5;
+    public int MaximumClaimsPerSubject { get; set; } = 3;
     public int MaximumSections { get; set; } = 6;
+    public int MinimumExperienceSections { get; set; } = 4;
     public double RelatedThreshold { get; set; } = 0.56;
     public double DiversityPenalty { get; set; } = 0.18;
     public bool ComposeProse { get; set; }

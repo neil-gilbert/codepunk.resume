@@ -199,7 +199,8 @@ public static partial class EvidenceLedgerBuilder
     {
         var parts = new List<string?>
         {
-            resume.Personal.FullName, resume.Personal.Email, resume.Personal.Phone, resume.Personal.Location,
+            resume.Personal.FullName, resume.Personal.Email, resume.Personal.Phone, resume.Personal.ContactPreference,
+            resume.Personal.Location,
             resume.Personal.LinkedInUrl, resume.Personal.GitHubUrl, resume.Personal.WebsiteUrl, resume.Personal.Summary
         };
         foreach (var experience in resume.Experience)

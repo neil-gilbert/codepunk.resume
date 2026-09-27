@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Globalization;
 using lucidRESUME.Core.Interfaces;
 using lucidRESUME.JobML;
 
@@ -59,6 +60,8 @@ public sealed class JobMlResumeCompiler(
                 if (subjectAffinities.TryGetValue(claim.Subject, out var roleAffinity))
                 {
                     score = score * .75 + roleAffinity * .25;
+                    if (roleAffinity >= .9 && claim.Type == "achievement")
+                        score = Math.Max(score, options.RelatedThreshold + .08);
                     reason += $"; role affinity {roleAffinity:F2}";
                 }
                 if (score >= options.RelatedThreshold)
@@ -70,18 +73,14 @@ public sealed class JobMlResumeCompiler(
             .Where(IsCareerAnchor)
             .Select(entity => entity.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var selected = SelectClaims(candidates, matches, reconciled, entities, index, options,
+        var selected = SelectClaims(candidates, accepted, matches, reconciled, entities, index, options,
             careerAnchorSubjects);
         var sections = selected.GroupBy(x => x.Claim.Subject, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(group => group.Any(item => item.Claim.Type == "summary"))
+            .ThenByDescending(group => ExperienceSortDate(group.Key, accepted).End)
+            .ThenByDescending(group => ExperienceSortDate(group.Key, accepted).Start)
             .ThenByDescending(group => group.Max(item => item.Score))
-            .Select((group, number) => new EvidencePacket(
-                $"section-{number + 1}-{Slug(group.Key)}",
-                group.Any(item => item.Claim.Type == "summary") ? "Professional Summary" : group.First().SubjectName,
-                "Preserve the candidate's human voice while emphasizing evidenced relevance to the target role.",
-                Math.Max(70, Math.Min(220, group.Sum(x => WordCount(x.Prose)))),
-                group.OrderByDescending(x => x.Score).ToList(),
-                group.SelectMany(x => x.Matches).Select(x => x.RequirementId).Distinct().ToList()))
+            .Select((group, number) => BuildEvidencePacket(group, number, requirements, accepted))
             .ToList();
         var gaps = requirements.Where(r => matches.All(m => m.RequirementId != r.Id || m.Kind == MatchKind.None))
             .Select(r => r.Text).ToList();
@@ -96,13 +95,117 @@ public sealed class JobMlResumeCompiler(
             embeddings is null ? "lexical" : "configured");
 
         var composed = await composition.ComposeAsync(manifest, jobDescription, options, cancellationToken);
-        var human = RenderHumanMarkdown(completeResume.File.Markdown, composed.Blocks, sections);
+        var human = RenderHumanMarkdown(completeResume.File.Markdown, composed.Blocks, sections, job.Title);
         var projected = BuildProjection(completeResume.File, human, composed.Blocks, selected,
             options.FullJobMlUri);
         var full = JobMlArtifactComposer.Compose(projected);
         var published = CJobMlProjector.Project(projected).Markdown;
         return new CompilationResult(Guid.NewGuid().ToString("N"), manifest, human, published, full,
             projected, composed.Used, composed.Provider, composed.Warnings);
+    }
+
+    private static EvidencePacket BuildEvidencePacket(
+        IGrouping<string, SelectedClaim> group,
+        int number,
+        IReadOnlyList<CompilerRequirement> requirements,
+        IReadOnlyList<JobMlClaim> acceptedClaims)
+    {
+        var rankedClaims = group.OrderByDescending(x => x.Score).ToList();
+        var initialRequirementIds = rankedClaims.SelectMany(x => x.Matches)
+            .Select(x => x.RequirementId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var allFocus = requirements
+            .Where(requirement => initialRequirementIds.Contains(requirement.Id, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(requirement => requirement.Kind)
+            .Select(requirement => requirement.Text)
+            .ToList();
+        var focus = allFocus.Take(6).ToList();
+        var isSummary = rankedClaims.Any(item => item.Claim.Type == "summary");
+        var isProject = rankedClaims.Any(item => item.Claim.Type == "project");
+        // A senior summary needs enough room for identity, the vacancy-specific
+        // differentiator and the relevant implementation/leadership context. At
+        // 72 words the sentence-preserving compactor commonly retained identity
+        // and stack but dropped the differentiator (for example daily agent use).
+        var targetWords = isSummary ? 80 : isProject ? 60 : 44 + Math.Max(0, rankedClaims.Count - 1) * 16;
+        targetWords = Math.Min(targetWords, isSummary ? 80 : 76);
+        var claims = FitHumanProse(rankedClaims, targetWords, allFocus);
+        var requirementIds = claims.SelectMany(x => x.Matches)
+            .Select(x => x.RequirementId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var sourceWords = claims.Sum(item => WordCount(item.Prose));
+        var maximumWords = Math.Clamp(Math.Max(24, sourceWords), 24, isSummary ? 80 : 76);
+        var intent = isSummary
+            ? "Write one plain, specific professional summary for this vacancy. Keep the candidate's vocabulary and omit generic aspiration or self-praise."
+            : "Write one compact role passage, not a catalogue of duties. Lead with the outcome most relevant to this vacancy, retain the substance of each selected claim, combine overlapping detail, and omit unrelated context.";
+        if (focus.Count > 0)
+            intent += $" The target emphasis is: {string.Join("; ", focus)}.";
+
+        var heading = isSummary ? "Professional Summary" : CompactHeading(claims[0].SubjectName);
+        var dateRange = isSummary ? null : ExperienceDateRange(group.Key, acceptedClaims);
+        if (!string.IsNullOrWhiteSpace(dateRange)) heading += $" | {dateRange}";
+
+        return new EvidencePacket(
+            $"section-{number + 1}-{Slug(group.Key)}",
+            heading,
+            intent,
+            maximumWords,
+            claims,
+            requirementIds,
+            isSummary ? "summary" : isProject ? "project" : "experience");
+    }
+
+    private static List<SelectedClaim> FitHumanProse(
+        IReadOnlyList<SelectedClaim> claims,
+        int wordBudget,
+        IReadOnlyList<string> focus)
+    {
+        var fitted = new List<SelectedClaim>();
+        var remaining = wordBudget;
+        for (var index = 0; index < claims.Count && remaining > 0; index++)
+        {
+            var futureMinimum = Math.Min(claims.Count - index - 1, 2) * 12;
+            var allowance = Math.Max(12, remaining - futureMinimum);
+            var prose = CompactHumanProse(claims[index].Prose, allowance, focus);
+            var words = WordCount(prose);
+            if (words == 0 || words > remaining)
+            {
+                // Prefer fewer complete, evidenced claims to chopped prose or an
+                // oversized deterministic fallback.
+                continue;
+            }
+            fitted.Add(claims[index] with { Prose = prose });
+            remaining -= words;
+        }
+        return fitted.Count > 0 ? fitted : [claims[0]];
+    }
+
+    private static string CompactHumanProse(string prose, int maximumWords, IReadOnlyList<string> focus)
+    {
+        var normalized = MarkdownEvidenceIndex.NormalizeText(prose);
+        if (WordCount(normalized) <= maximumWords) return normalized;
+        var sentences = Regex.Split(normalized, @"(?<=[.!?])\s+")
+            .Select((text, index) => new { Text = text.Trim(), Index = index })
+            .Where(item => item.Text.Length > 0)
+            .ToList();
+        if (sentences.Count <= 1) return normalized;
+
+        var focusTokens = Tokens(string.Join(' ', focus));
+        var selected = new List<(string Text, int Index)>();
+        var remaining = maximumWords;
+        foreach (var sentence in sentences
+                     .OrderByDescending(item => Tokens(item.Text).Intersect(focusTokens).Count())
+                     .ThenBy(item => item.Index))
+        {
+            var words = WordCount(sentence.Text);
+            if (words > remaining) continue;
+            selected.Add((sentence.Text, sentence.Index));
+            remaining -= words;
+        }
+        return selected.Count == 0
+            ? normalized
+            : string.Join(' ', selected.OrderBy(item => item.Index).Select(item => item.Text));
     }
 
     private async Task<(double Score, string Reason, bool Direct)> ScoreAsync(
@@ -167,13 +270,18 @@ public sealed class JobMlResumeCompiler(
         if (!executiveTarget) return 0;
         string[] executiveTitles = ["VP", "Head of Engineering", "CTO", "Director of Engineering", "Engineering Director"];
         if (executiveTitles.Any(title => candidateRole.Contains(title, StringComparison.OrdinalIgnoreCase))) return .92;
+        if (candidateRole.Contains("Head", StringComparison.OrdinalIgnoreCase) ||
+            candidateRole.Contains("Director", StringComparison.OrdinalIgnoreCase) ||
+            candidateRole.Contains("CTO", StringComparison.OrdinalIgnoreCase) ||
+            candidateRole.Contains("VP", StringComparison.OrdinalIgnoreCase)) return .92;
         if (candidateRole.Contains("Lead", StringComparison.OrdinalIgnoreCase) ||
             candidateRole.Contains("Manager", StringComparison.OrdinalIgnoreCase)) return .72;
         return 0;
     }
 
     private static List<SelectedClaim> SelectClaims(
-        IReadOnlyList<JobMlClaim> candidates, IReadOnlyList<ClaimMatch> matches,
+        IReadOnlyList<JobMlClaim> candidates, IReadOnlyList<JobMlClaim> acceptedClaims,
+        IReadOnlyList<ClaimMatch> matches,
         IReadOnlyDictionary<string, ClaimEvidenceResolution> reconciled,
         IReadOnlyDictionary<string, JobMlEntity> entities, MarkdownEvidenceIndex index,
         CompilationOptions options, IReadOnlySet<string>? careerAnchorSubjects = null)
@@ -206,6 +314,62 @@ public sealed class JobMlResumeCompiler(
                 anchored.Claim.Evidence.Select((e, i) => e.Id ?? $"{anchored.Claim.Id}-e{i + 1}").ToList(),
                 anchored.Matches.Select(match => match.Score).DefaultIfEmpty(.5).Max(), anchored.Matches));
             foreach (var requirement in anchored.Matches.Select(match => match.RequirementId))
+                coveredRequirements.Add(requirement);
+        }
+
+        // Every targeted resume needs the author's reviewed summary. It frames the
+        // selected evidence but never gains facts from the vacancy.
+        var summary = candidates
+            .Where(claim => claim.Type == "summary")
+            .Select(claim => new
+            {
+                Claim = claim,
+                Matches = matches.Where(match =>
+                    match.ClaimId.Equals(claim.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                Prose = ResolveProse(claim, reconciled, index)
+            })
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Prose))
+            .OrderByDescending(candidate => candidate.Matches.Select(match => match.Score).DefaultIfEmpty(.55).Max())
+            .FirstOrDefault();
+        if (summary is not null && result.All(item => item.Claim.Id != summary.Claim.Id))
+            result.Add(new SelectedClaim(summary.Claim,
+                entities.GetValueOrDefault(summary.Claim.Subject)?.Name ?? summary.Claim.Subject,
+                summary.Prose!,
+                summary.Claim.Evidence.Select((e, i) => e.Id ?? $"{summary.Claim.Id}-e{i + 1}").ToList(),
+                summary.Matches.Select(match => match.Score).DefaultIfEmpty(.55).Max(), summary.Matches));
+
+        // Reserve relevant employment evidence before project matches consume the
+        // section budget. Leadership resumes still need to read as career histories.
+        var reservedRoles = candidates
+            .Where(claim => entities.GetValueOrDefault(claim.Subject)?.Type == "experience")
+            .Where(claim => careerAnchorSubjects?.Contains(claim.Subject) != true)
+            .Select(claim => new
+            {
+                Claim = claim,
+                Matches = matches.Where(match =>
+                    match.ClaimId.Equals(claim.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                Prose = ResolveProse(claim, reconciled, index),
+                Recency = ExperienceRecency(claim.Subject, acceptedClaims)
+            })
+            .Where(candidate => candidate.Matches.Count > 0 && !string.IsNullOrWhiteSpace(candidate.Prose))
+            .GroupBy(candidate => candidate.Claim.Subject, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group
+                .OrderByDescending(candidate =>
+                    candidate.Matches.Max(match => match.Score) * .55 + candidate.Recency * .45)
+                .ThenByDescending(candidate => LeadershipClaimSignal(candidate.Claim.Statement))
+                .First())
+            .OrderByDescending(candidate =>
+                candidate.Matches.Max(match => match.Score) * .55 + candidate.Recency * .45)
+            .Take(options.MinimumExperienceSections);
+        foreach (var role in reservedRoles)
+        {
+            if (result.Any(item => item.Claim.Id.Equals(role.Claim.Id, StringComparison.OrdinalIgnoreCase))) continue;
+            result.Add(new SelectedClaim(role.Claim,
+                entities.GetValueOrDefault(role.Claim.Subject)?.Name ?? role.Claim.Subject,
+                role.Prose!,
+                role.Claim.Evidence.Select((e, i) => e.Id ?? $"{role.Claim.Id}-e{i + 1}").ToList(),
+                role.Matches.Max(match => match.Score), role.Matches));
+            foreach (var requirement in role.Matches.Select(match => match.RequirementId))
                 coveredRequirements.Add(requirement);
         }
 
@@ -283,6 +447,86 @@ public sealed class JobMlResumeCompiler(
         return score;
     }
 
+    private static int LeadershipClaimSignal(string statement)
+    {
+        var score = CareerAnchorClaimSignal(statement);
+        if (statement.Contains("recruited", StringComparison.OrdinalIgnoreCase) ||
+            statement.Contains("hired", StringComparison.OrdinalIgnoreCase)) score += 6;
+        if (statement.Contains("engineering standards", StringComparison.OrdinalIgnoreCase)) score += 4;
+        if (statement.Contains("team", StringComparison.OrdinalIgnoreCase)) score += 2;
+        if (statement.Contains("mentored", StringComparison.OrdinalIgnoreCase)) score += 2;
+        return score;
+    }
+
+    private static string? ExperienceDateRange(string subject, IReadOnlyList<JobMlClaim> claims)
+    {
+        var temporal = claims.FirstOrDefault(claim =>
+            claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) && claim.Type == "experience");
+        if (temporal is null) return null;
+        var match = Regex.Match(temporal.Statement,
+            @"\|\s*(?<start>\d{4}-\d{2}-\d{2})\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|Present)\s*$",
+            RegexOptions.IgnoreCase);
+        if (!match.Success || !DateOnly.TryParseExact(match.Groups["start"].Value, "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)) return null;
+        var endText = match.Groups["end"].Value;
+        var end = endText.Equals("Present", StringComparison.OrdinalIgnoreCase)
+            ? "Present"
+            : DateOnly.TryParseExact(endText, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var endDate)
+                ? endDate.ToString("MMM yyyy", CultureInfo.GetCultureInfo("en-GB"))
+                : null;
+        return end is null
+            ? null
+            : $"{start.ToString("MMM yyyy", CultureInfo.GetCultureInfo("en-GB"))} - {end}";
+    }
+
+    private static bool IsCurrentExperience(string subject, IReadOnlyList<JobMlClaim> claims) =>
+        claims.Any(claim => claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) &&
+                            claim.Type == "experience" &&
+                            Regex.IsMatch(claim.Statement, @"\|\s*present\s*$", RegexOptions.IgnoreCase));
+
+    private static (DateOnly Start, DateOnly End) ExperienceSortDate(
+        string subject, IReadOnlyList<JobMlClaim> claims)
+    {
+        var temporal = claims.FirstOrDefault(claim =>
+            claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) && claim.Type == "experience");
+        if (temporal is null) return (DateOnly.MinValue, DateOnly.MinValue);
+        var match = Regex.Match(temporal.Statement,
+            @"\|\s*(?<start>\d{4}-\d{2}-\d{2})\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|present)\s*$",
+            RegexOptions.IgnoreCase);
+        if (!match.Success || !DateOnly.TryParseExact(match.Groups["start"].Value, "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var start))
+            return (DateOnly.MinValue, DateOnly.MinValue);
+        if (match.Groups["end"].Value.Equals("present", StringComparison.OrdinalIgnoreCase))
+            return (start, DateOnly.MaxValue);
+        return DateOnly.TryParseExact(match.Groups["end"].Value, "yyyy-MM-dd",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out var end)
+            ? (start, end)
+            : (DateOnly.MinValue, DateOnly.MinValue);
+    }
+
+    private static double ExperienceRecency(string subject, IReadOnlyList<JobMlClaim> claims)
+    {
+        var temporal = claims.FirstOrDefault(claim =>
+            claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) && claim.Type == "experience");
+        if (temporal is null) return .4;
+        var match = Regex.Match(temporal.Statement,
+            @"\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|present)\s*$",
+            RegexOptions.IgnoreCase);
+        if (!match.Success) return .4;
+        if (match.Groups["end"].Value.Equals("present", StringComparison.OrdinalIgnoreCase)) return 1;
+        if (!DateOnly.TryParseExact(match.Groups["end"].Value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var end)) return .4;
+        return end.Year switch
+        {
+            >= 2025 => 1,
+            >= 2023 => .85,
+            >= 2021 => .7,
+            >= 2018 => .55,
+            _ => .4
+        };
+    }
+
     private static bool IsCareerAnchor(JobMlEntity entity) =>
         string.Equals(entity.Projection?.Include, "always", StringComparison.OrdinalIgnoreCase);
 
@@ -354,7 +598,7 @@ public sealed class JobMlResumeCompiler(
             Entities = source.Data.Entities.Where(x => entityIds.Contains(x.Id)).Select(x => new JobMlEntity
             {
                 Id = x.Id,
-                Name = x.Name,
+                Name = CompactHeading(x.Name),
                 Type = x.Type,
                 Source = $"#{blocks.First(b => b.ClaimIds.Any(id => selectedById.GetValueOrDefault(id)?.Claim.Subject.Equals(x.Id, StringComparison.OrdinalIgnoreCase) == true)).SectionId}",
                 Projection = x.Projection is null ? null : new JobMlProjectionPreference
@@ -377,19 +621,49 @@ public sealed class JobMlResumeCompiler(
     }
 
     private static string RenderHumanMarkdown(string completeMarkdown,
-        IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<EvidencePacket> packets)
+        IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<EvidencePacket> packets, string? targetTitle)
     {
         var firstSection = Regex.Match(completeMarkdown, @"(?m)^##\s+");
         var identity = (firstSection.Success ? completeMarkdown[..firstSection.Index] : completeMarkdown).Trim();
         if (string.IsNullOrWhiteSpace(identity)) identity = "# Résumé";
-        return identity + "\n\n" + string.Join("\n\n", blocks.Select(block =>
+        var packetById = packets.ToDictionary(packet => packet.SectionId, StringComparer.OrdinalIgnoreCase);
+        var orderedKinds = new[] { "summary", "project", "experience" };
+        var renderedGroups = new List<string>();
+        foreach (var kind in orderedKinds)
         {
-            var heading = packets.First(x => x.SectionId == block.SectionId).Heading;
-            // A composition block is the evidence passage for every claim it contains.
-            // Keep it as one Markdown paragraph so :p1 and its fingerprint describe the
-            // same text even when the source block combined several claim passages.
-            return $"## {heading} {{#{block.SectionId}}}\n\n{MarkdownEvidenceIndex.NormalizeText(block.Text)}";
-        }));
+            var matching = blocks.Where(block =>
+                    packetById.GetValueOrDefault(block.SectionId)?.Kind.Equals(kind,
+                        StringComparison.OrdinalIgnoreCase) == true)
+                .ToList();
+            if (matching.Count == 0) continue;
+
+            if (kind == "summary")
+            {
+                renderedGroups.AddRange(matching.Select(block => RenderResumeBlock(block,
+                    packetById[block.SectionId], 2)));
+                continue;
+            }
+
+            var groupHeading = kind == "project" ? "Selected AI Engineering" : "Experience";
+            renderedGroups.Add($"## {groupHeading}\n\n" + string.Join("\n\n", matching.Select(block =>
+                RenderResumeBlock(block, packetById[block.SectionId], 3))));
+        }
+
+        var title = string.IsNullOrWhiteSpace(targetTitle)
+            ? null
+            : $"**{Regex.Replace(targetTitle.Trim(), @"\s+", " ")}**";
+        return string.Join("\n\n", new[] { identity, title }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Concat(renderedGroups));
+    }
+
+    private static string RenderResumeBlock(CompositionBlock block, EvidencePacket packet, int headingLevel)
+    {
+        // A composition block is the evidence passage for every claim it contains.
+        // Keep it as one Markdown paragraph so :p1 and its fingerprint describe the
+        // same text even when the source block combined several claim passages.
+        return $"{new string('#', headingLevel)} {packet.Heading} {{#{block.SectionId}}}\n\n" +
+               MarkdownEvidenceIndex.NormalizeText(block.Text);
     }
 
     private static IReadOnlyDictionary<string, HashSet<string>> BuildConceptTerms(IEnumerable<JobMlConcept> concepts) =>
@@ -411,6 +685,17 @@ public sealed class JobMlResumeCompiler(
         text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(x => x.Length is >= 12 and <= 240)
             .Take(40).Select((x, i) => new CompilerRequirement($"req-{i + 1}", x, RequirementKind.Responsibility, x)).ToList();
+
+    private static string CompactHeading(string value)
+    {
+        var heading = Regex.Replace(value, @"\s+", " ").Trim();
+        var colon = heading.IndexOf(':');
+        if (colon is > 0 and <= 80)
+            heading = heading[..colon].Trim();
+        if (heading.Length <= 110) return heading;
+        var boundary = heading.LastIndexOf(' ', 106);
+        return heading[..(boundary > 30 ? boundary : 106)].TrimEnd() + "…";
+    }
 
     private static bool IsAccepted(JobMlClaim claim) =>
         string.Equals(claim.Review, "accepted", StringComparison.OrdinalIgnoreCase);

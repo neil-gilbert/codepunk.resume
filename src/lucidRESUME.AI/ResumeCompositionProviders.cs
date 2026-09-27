@@ -95,10 +95,15 @@ public sealed class OpenAiResumeCompositionProvider : IResumeCompositionProvider
         You are performing the {pass} editing pass on a resume compiled from a verified career ledger.
         This is editing, never blank-page generation. Use only facts, numbers, names, dates, technologies,
         claim IDs and evidence IDs present in immutable_human_sources. allowed_emphasis controls emphasis only.
-        Preserve the candidate's first-person/third-person stance, vocabulary and concrete voice. Do not add
-        generic leadership language, hype, fabricated scale or missing requirements. Do not use em dashes.
-        For Tighten, remove repetition and filler without erasing concrete detail. For HumanVoice, remove stock
-        AI phrasing and keep the source's rhythm. Return every section once and preserve all identifier arrays.
+        Follow each section brief. Preserve the candidate's first-person/third-person stance, vocabulary and
+        concrete voice. A role section is a selective account for this vacancy, not a compressed list of every
+        duty in the source. Combine overlapping evidence and foreground the most relevant outcome, but retain
+        the factual substance represented by every supplied claim ID. Do not add generic leadership language,
+        hype, fabricated scale or missing requirements. Do not use em dashes.
+        For Tighten, remove repetition, setup and low-value detail while keeping names, outcomes and useful
+        technical specifics. For HumanVoice, keep the tightened length, remove stock phrases such as "proven
+        track record", "passionate", "results-driven", "leveraged" and "spearheaded", and favour direct,
+        natural UK English. Return every section once and preserve all identifier arrays.
         """;
 
     internal static CompositionDraft Parse(string? json)
@@ -123,45 +128,137 @@ public sealed class LlamaSharpResumeCompositionProvider(LlamaSharpRuntime runtim
     {
         var blocks = new List<CompositionBlock>();
         var warnings = new List<string>();
-        foreach (var current in request.CurrentBlocks)
+        foreach (var batch in request.CurrentBlocks.Chunk(3))
         {
-            var source = request.SourceBlocks.Single(x => x.SectionId == current.SectionId);
-            var packet = request.Manifest.Sections.Single(x => x.SectionId == current.SectionId);
-            var allowed = packet.RequirementIds.Select(id => request.Manifest.Requirements
-                .First(requirement => requirement.Id == id).Text).ToList();
-            var prompt = "Edit this single section and return JSON only.\n" + JsonSerializer.Serialize(new
+            var prompt = "Edit this ordered batch of resume sections. Return JSON only.\n" +
+                         JsonSerializer.Serialize(new
+                         {
+                             pass = request.Pass.ToString(),
+                             document_context = new
+                             {
+                                 target_role = request.JobDescription,
+                                 preceding_section_ids = blocks.Select(block => block.SectionId)
+                             },
+                             sections = batch.Select(current =>
+                             {
+                                 var source = request.SourceBlocks.Single(x => x.SectionId == current.SectionId);
+                                 var packet = request.Manifest.Sections.Single(x => x.SectionId == current.SectionId);
+                                 return new
+                                 {
+                                     sectionId = current.SectionId,
+                                     immutable_human_source = source.Text,
+                                     current_draft = current.Text,
+                                     section_brief = packet.Intent,
+                                     maximum_words = packet.MaximumWords,
+                                     allowed_emphasis = packet.RequirementIds.Select(id => request.Manifest.Requirements
+                                         .First(requirement => requirement.Id == id).Text)
+                                 };
+                             })
+                         });
+            var maximumWords = batch.Sum(current => request.Manifest.Sections
+                .Single(section => section.SectionId == current.SectionId).MaximumWords);
+            var maximumTokens = Math.Clamp(maximumWords * 3 + 350, 700, 1800);
+            var output = await runtime.GenerateAsync(prompt, SystemInstructions, maximumTokens,
+                cancellationToken, 0f);
+            var result = ParseBatch(output);
+            var sourceById = batch.ToDictionary(block => block.SectionId, StringComparer.OrdinalIgnoreCase);
+            blocks.AddRange(result.Sections.Select(edit =>
             {
-                pass = request.Pass.ToString(),
-                immutable_human_source = source.Text,
-                current_draft = current.Text,
-                maximum_words = packet.MaximumWords,
-                allowed_emphasis = allowed
-            });
-            var system = """
-                You are a bounded resume editor. Edit, never invent. Every fact, number, name, date and
-                technology must already occur in immutable_human_source. allowed_emphasis may change focus,
-                not facts. Tighten means remove repetition and filler. HumanVoice means remove stock AI
-                wording while preserving the source's stance and rhythm. Never use an em dash. Return exactly
-                one JSON object shaped as {"text":"edited prose","warnings":[]}.
-                """;
-            var output = await runtime.GenerateAsync(prompt, system, 1400, cancellationToken);
-            var result = ParseSection(output);
-            blocks.Add(current with { Text = result.Text });
+                if (!sourceById.TryGetValue(edit.SectionId, out var current))
+                    return new CompositionBlock(edit.SectionId, edit.Text, [], []);
+                return current with { Text = edit.Text };
+            }));
             warnings.AddRange(result.Warnings);
         }
+
         return new CompositionDraft(blocks, warnings);
     }
 
-    private static SectionEdit ParseSection(string? json)
+    private const string SystemInstructions = """
+            You are a bounded resume editor. Edit, never invent. Every fact, number, name, date and
+            technology must already occur in that section's immutable_human_source. Follow each
+            section_brief. allowed_emphasis may change focus, not facts. Make the sections work as one
+            coherent resume without moving facts between sections. Write selective, compact role accounts
+            rather than lists of every duty. Tighten means combine overlap and remove repetition, setup and
+            filler. HumanVoice means keep the tightened length and remove stock AI wording while preserving
+            the source's stance and rhythm. Prefer direct, natural UK English. Never use an em dash.
+            Return exactly one JSON object shaped as
+            {"sections":[{"sectionId":"the supplied id","text":"edited prose"}],"warnings":[]}.
+            Return every supplied section exactly once and no additional sections.
+            """;
+
+    internal static SectionBatchEdit ParseBatch(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) throw new InvalidDataException("The model returned no section JSON.");
         var start = json.IndexOf('{');
         var end = json.LastIndexOf('}');
         if (start < 0 || end <= start) throw new InvalidDataException("The model returned invalid section JSON.");
-        return JsonSerializer.Deserialize<SectionEdit>(json[start..(end + 1)],
-                   new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-               ?? throw new InvalidDataException("The model returned an empty section edit.");
+        try
+        {
+            return JsonSerializer.Deserialize<SectionBatchEdit>(json[start..(end + 1)], JsonOptions)
+                   ?? throw new InvalidDataException("The model returned an empty section edit.");
+        }
+        catch (JsonException)
+        {
+            var recovered = RecoverCompleteSections(json);
+            if (recovered.Count == 0)
+                throw new InvalidDataException("The model returned truncated JSON without a complete section edit.");
+            return new SectionBatchEdit(recovered,
+                [$"The local model response was truncated; recovered {recovered.Count} complete section edit(s)."]);
+        }
     }
 
-    private sealed record SectionEdit(string Text, IReadOnlyList<string> Warnings);
+    private static IReadOnlyList<SectionEdit> RecoverCompleteSections(string json)
+    {
+        var property = json.IndexOf("\"sections\"", StringComparison.OrdinalIgnoreCase);
+        var arrayStart = property < 0 ? -1 : json.IndexOf('[', property);
+        if (arrayStart < 0) return [];
+
+        var edits = new List<SectionEdit>();
+        var objectStart = -1;
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+        for (var index = arrayStart + 1; index < json.Length; index++)
+        {
+            var character = json[index];
+            if (inString)
+            {
+                if (escaped) escaped = false;
+                else if (character == '\\') escaped = true;
+                else if (character == '"') inString = false;
+                continue;
+            }
+            if (character == '"')
+            {
+                inString = true;
+                continue;
+            }
+            if (character == '{')
+            {
+                if (depth++ == 0) objectStart = index;
+                continue;
+            }
+            if (character != '}' || depth == 0) continue;
+            depth--;
+            if (depth != 0 || objectStart < 0) continue;
+            try
+            {
+                var edit = JsonSerializer.Deserialize<SectionEdit>(json[objectStart..(index + 1)], JsonOptions);
+                if (edit is not null && !string.IsNullOrWhiteSpace(edit.SectionId) && !string.IsNullOrWhiteSpace(edit.Text))
+                    edits.Add(edit);
+            }
+            catch (JsonException)
+            {
+                // Only complete, independently valid objects are recoverable.
+            }
+            objectStart = -1;
+        }
+        return edits;
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    internal sealed record SectionBatchEdit(IReadOnlyList<SectionEdit> Sections, IReadOnlyList<string> Warnings);
+    internal sealed record SectionEdit(string SectionId, string Text);
 }

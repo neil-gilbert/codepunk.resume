@@ -70,7 +70,10 @@ public sealed class PdfExporter : IResumeExporter
                 col.Item().SemanticParagraph().Text(p.Email).FontSize(8).FontColor(Colors.Grey.Medium);
 
             if (!string.IsNullOrWhiteSpace(p.Phone))
-                col.Item().SemanticParagraph().Text(p.Phone).FontSize(8).FontColor(Colors.Grey.Medium);
+                col.Item().SemanticParagraph().Text(string.IsNullOrWhiteSpace(p.ContactPreference)
+                        ? p.Phone
+                        : $"{p.Phone} - {p.ContactPreference} -")
+                    .FontSize(8).FontColor(Colors.Grey.Medium);
             if (!string.IsNullOrWhiteSpace(p.Location))
                 col.Item().SemanticParagraph().Text(p.Location).FontSize(8).FontColor(Colors.Grey.Medium);
 

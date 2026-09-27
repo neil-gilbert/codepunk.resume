@@ -46,7 +46,10 @@ responsibilities, matches these to accepted claims and aliases, rejects stale or
 unreviewed evidence, and selects a diverse set with per-role limits. Genuine
 requirements with no accepted evidence are reported as gaps.
 
-If polishing is disabled, the projection uses the selected passages exactly. If
+Before optional polishing, the deterministic planner selects complete sentences
+from the reviewed passages and fits them to compact per-section budgets. It drops
+a lower-ranked claim rather than chopping prose or dumping every matching duty.
+If polishing is disabled, this human-authored selection is the final prose. If
 enabled, the orchestrator runs two edits:
 
 1. `Tighten` removes irrelevant wording and foregrounds already-supported detail.
@@ -55,10 +58,13 @@ enabled, the orchestrator runs two edits:
 Both passes receive the immutable source blocks as well as the current draft.
 They receive only the requirements already matched to each selected section, not
 the full untrusted vacancy as a source of candidate facts. The local grug provider
-edits one section at a time to keep its context small and its JSON contract reliable.
-After every pass, validation rejects unknown sections, claims, evidence IDs,
-numbers, and over-budget text. A rejected or failed pass leaves the last valid
-human-based version in place.
+edits the selected sections as one batch so it can see the document's overall
+shape. If its JSON output is truncated, only independently complete section
+objects are recovered. After every pass, validation accepts or rejects each
+section independently. Unknown sections, changed claim or evidence identities,
+invented numbers, unsupported vacancy terminology, and over-budget text are
+discarded. Each rejected or incomplete section retains its last valid
+human-based version.
 
 This is a projection with optional bounded editing, not generation from a blank
 prompt.
@@ -121,9 +127,10 @@ control never fetches URLs contained in uploaded JobML.
 
 ## Verification
 
-The compiler test suite covers immutable snapshots, drift rejection, source-prose
-selection, honest gaps, rejection of invented numeric facts, live bounded edits
-with OpenAI and the installed grug 9B model, and endpoint-only cJobML. The sample host
+The compiler test suite covers immutable snapshots, drift rejection, compact
+source-sentence selection, honest gaps, partial-pass recovery, rejection of
+invented numeric facts, live bounded edits with OpenAI and the installed grug 9B
+model, and endpoint-only cJobML. The sample host
 is also exercised in a real browser. The checked smoke flow publishes the example
 master, compiles a VP Engineering projection, renders the document, and produces
 valid Word and PDF files.

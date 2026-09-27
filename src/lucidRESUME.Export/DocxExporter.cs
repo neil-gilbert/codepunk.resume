@@ -265,7 +265,9 @@ public sealed class DocxExporter : IResumeExporter
                 fontFamily: template.FontFamily));
 
         if (!string.IsNullOrWhiteSpace(personal.Phone))
-            body.Append(CreateParagraph(personal.Phone, fontSize: 18, color: "555555",
+            body.Append(CreateParagraph(string.IsNullOrWhiteSpace(personal.ContactPreference)
+                ? personal.Phone
+                    : $"{personal.Phone} - {personal.ContactPreference} -", fontSize: 18, color: "555555",
                 fontFamily: template.FontFamily));
         if (!string.IsNullOrWhiteSpace(personal.Location))
             body.Append(CreateParagraph(personal.Location, fontSize: 18, color: "555555",

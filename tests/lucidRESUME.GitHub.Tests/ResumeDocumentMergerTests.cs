@@ -235,6 +235,74 @@ public class ResumeDocumentMergerTests
     }
 
     [Fact]
+    public async Task MergeInto_CopiesContactPreference()
+    {
+        var target = ResumeDocument.Create("resume.docx", "application/docx", 100);
+        var incoming = ResumeDocument.Create("reviewed.md", "text/markdown", 100);
+        incoming.Personal.ContactPreference = "please email in the first instance";
+
+        await _merger.MergeIntoAsync(target, incoming, "reviewed.md");
+
+        Assert.Equal("please email in the first instance", target.Personal.ContactPreference);
+    }
+
+    [Fact]
+    public async Task MergeInto_ExplicitEndDateCannotBeReopenedByStalePresentMarker()
+    {
+        var target = ResumeDocument.Create("reviewed.md", "text/markdown", 100);
+        target.Experience.Add(new WorkExperience
+        {
+            Company = "Zenchef",
+            Title = "Lead Developer",
+            StartDate = new DateOnly(2024, 10, 1),
+            EndDate = new DateOnly(2026, 5, 1),
+            IsCurrent = false
+        });
+        var incoming = ResumeDocument.Create("old-cv.docx", "application/docx", 100);
+        incoming.Experience.Add(new WorkExperience
+        {
+            Company = "Zenchef Ltd",
+            Title = "Lead Developer",
+            StartDate = new DateOnly(2024, 10, 1),
+            IsCurrent = true
+        });
+
+        await _merger.MergeIntoAsync(target, incoming, "old-cv.docx");
+
+        var role = Assert.Single(target.Experience);
+        Assert.Equal(new DateOnly(2026, 5, 1), role.EndDate);
+        Assert.False(role.IsCurrent);
+    }
+
+    [Fact]
+    public async Task MergeInto_ExplicitIncomingEndDateClosesCurrentRole()
+    {
+        var target = ResumeDocument.Create("old-cv.docx", "application/docx", 100);
+        target.Experience.Add(new WorkExperience
+        {
+            Company = "Zenchef Ltd",
+            Title = "Lead Developer",
+            StartDate = new DateOnly(2024, 10, 1),
+            IsCurrent = true
+        });
+        var incoming = ResumeDocument.Create("reviewed.md", "text/markdown", 100);
+        incoming.Experience.Add(new WorkExperience
+        {
+            Company = "Zenchef",
+            Title = "Lead Developer",
+            StartDate = new DateOnly(2024, 10, 1),
+            EndDate = new DateOnly(2026, 5, 1),
+            IsCurrent = false
+        });
+
+        await _merger.MergeIntoAsync(target, incoming, "reviewed.md");
+
+        var role = Assert.Single(target.Experience);
+        Assert.Equal(new DateOnly(2026, 5, 1), role.EndDate);
+        Assert.False(role.IsCurrent);
+    }
+
+    [Fact]
     public async Task MergeInto_MergesAchievements()
     {
         var target = ResumeDocument.Create("resume.docx", "application/docx", 100);

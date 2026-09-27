@@ -35,8 +35,11 @@ what to edit, accept, and publish.
 Projection itself is deterministic. It selects reviewed resume, LinkedIn, and
 GitHub ledger records and starts with the accepted human prose. An optional,
 bounded editing stage may tighten those selected passages with local grug 9B or
-OpenAI. Each pass is rejected if it introduces claims, evidence IDs, numbers, or
-sections outside the deterministic selection. The result exports as one
+OpenAI. The deterministic planner first fits complete source sentences to a
+compact per-section budget. Model edits are then accepted section by section;
+any edit that changes claim or evidence identity, invents a number, borrows an
+unsupported vacancy term, or exceeds its budget falls back to the valid human
+selection. The result exports as one
 evidence-linked artifact in Markdown, Word, or PDF. Published documents use
 inline numbered citations and a compact cJobML References section. A citation can
 open the exact role or project in the published full career transcript. Full
@@ -194,6 +197,9 @@ exported Markdown + JobML `career_record`, publishes an immutable revision,
 accepts a job description, and returns a shorter evidence-bounded projection with
 Markdown, Word, and PDF downloads. The application career ledger remains the
 canonical source; the published JobML document is its portable projection.
+OpenAI is the default interactive editor. The local LLamaSharp path batches the
+whole projection for coherence and can recover complete section objects from a
+truncated response without accepting an incomplete edit.
 
 ![JobML web compiler rendering an evidence-linked projection](docs/screenshots/jobml-web-compiler.png)
 
@@ -437,20 +443,20 @@ lucidRESUME (Avalonia UI: My CV, JobML Editor, My Data, Career, Jobs, Add Job, P
 ## Tests
 
 ```bash
-dotnet test lucidRESUME.sln    # 434 tests across 12 projects
+dotnet test lucidRESUME.sln    # 442 tests across 12 projects
 ```
 
 | Project | Tests | Coverage |
 |---------|-------|----------|
-| Core.Tests | 90 | Persistence, models, multi-resume, export, linked posts |
+| Core.Tests | 91 | Persistence, models, multi-resume, export, linked posts |
 | Extraction.Tests | 25 | NER, recognizers, RRF fusion pipeline |
-| AI.Tests | 44 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
+| AI.Tests | 45 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
 | Matching.Tests | 58 | Skill scoring, filters, voting, projection quality |
 | JobSpec.Tests | 15 | JD parsing, salary extraction |
 | EmailTracker.Tests | 25 | Classifier, matcher |
-| GitHub.Tests | 34 | Language map, repository assessment, package families, LinkedIn parsing, document merge |
+| GitHub.Tests | 37 | Language map, repository assessment, package families, LinkedIn parsing, document merge |
 | JobML.Tests | 29 | Parsing, validation, drift, reversible links, cJobML projection |
-| Compiler.Tests | 9 | Deterministic evidence selection and projection orchestration |
+| Compiler.Tests | 12 | Deterministic evidence selection and projection orchestration |
 | Web.Tests | 5 | ASP.NET Core endpoint and projection control |
 | App.Tests | 2 | Native operating-system credential storage |
 | Avalonia.UITesting.Tests | 98 | Input, scripts, locators, screenshots, REPL |

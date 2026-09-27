@@ -5,6 +5,8 @@ public sealed class PersonalInfo
     public string? FullName { get; set; }
     public string? Email { get; set; }
     public string? Phone { get; set; }
+    /// <summary>Optional human-facing note rendered immediately after the phone number.</summary>
+    public string? ContactPreference { get; set; }
     public string? Location { get; set; }
     public string? LinkedInUrl { get; set; }
     public string? GitHubUrl { get; set; }

@@ -148,6 +148,7 @@ public sealed class ResumeDocumentMerger
                 case "FullName": target.Personal.FullName = change.IncomingValue; break;
                 case "Email": target.Personal.Email = change.IncomingValue; break;
                 case "Phone": target.Personal.Phone = change.IncomingValue; break;
+                case "ContactPreference": target.Personal.ContactPreference = change.IncomingValue; break;
                 case "Location": target.Personal.Location = change.IncomingValue; break;
                 case "LinkedInUrl": target.Personal.LinkedInUrl = change.IncomingValue; break;
                 case "GitHubUrl": target.Personal.GitHubUrl = change.IncomingValue; break;
@@ -216,6 +217,7 @@ public sealed class ResumeDocumentMerger
         Check("FullName", current.FullName, incoming.FullName);
         Check("Email", current.Email, incoming.Email);
         Check("Phone", current.Phone, incoming.Phone);
+        Check("ContactPreference", current.ContactPreference, incoming.ContactPreference);
         Check("Location", current.Location, incoming.Location);
         Check("LinkedInUrl", current.LinkedInUrl, incoming.LinkedInUrl);
         Check("GitHubUrl", current.GitHubUrl, incoming.GitHubUrl);
@@ -582,6 +584,7 @@ public sealed class ResumeDocumentMerger
         target.FullName ??= incoming.FullName;
         target.Email ??= incoming.Email;
         target.Phone ??= incoming.Phone;
+        target.ContactPreference ??= incoming.ContactPreference;
         target.Location ??= incoming.Location;
         target.LinkedInUrl ??= incoming.LinkedInUrl;
         target.GitHubUrl ??= incoming.GitHubUrl;
@@ -603,12 +606,22 @@ public sealed class ResumeDocumentMerger
             (Math.Abs(incoming.StartDate.Value.DayNumber - target.StartDate.Value.DayNumber) <= DateOverlapGraceDays &&
              incoming.StartDate < target.StartDate)))
             target.StartDate = incoming.StartDate;
-        if (incoming.IsCurrent) target.IsCurrent = true;
         target.IsCareerAnchor |= incoming.IsCareerAnchor;
-        if (!target.IsCurrent && incoming.EndDate.HasValue && (target.EndDate is null ||
-            (Math.Abs(incoming.EndDate.Value.DayNumber - target.EndDate.Value.DayNumber) <= DateOverlapGraceDays &&
-             incoming.EndDate > target.EndDate)))
-            target.EndDate = incoming.EndDate;
+        // An explicit end date is reviewable evidence and therefore wins over the
+        // less precise "Present" marker, irrespective of import order. This stops
+        // an older CV from reopening a role that a later source has closed.
+        if (incoming.EndDate.HasValue)
+        {
+            if (target.EndDate is null ||
+                (Math.Abs(incoming.EndDate.Value.DayNumber - target.EndDate.Value.DayNumber) <= DateOverlapGraceDays &&
+                 incoming.EndDate > target.EndDate))
+                target.EndDate = incoming.EndDate;
+            target.IsCurrent = false;
+        }
+        else if (incoming.IsCurrent && target.EndDate is null)
+        {
+            target.IsCurrent = true;
+        }
 
         foreach (var tech in incoming.Technologies)
             if (!target.Technologies.Contains(tech, StringComparer.OrdinalIgnoreCase))

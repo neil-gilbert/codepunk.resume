@@ -27,6 +27,8 @@ public sealed class CareerRecordJobMlBuilderTests
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 123);
         resume.Personal.FullName = "Jane Smith";
         resume.Personal.Email = "jane@example.com";
+        resume.Personal.Phone = "+44 1234 567890";
+        resume.Personal.ContactPreference = "please email in the first instance";
         resume.Experience.Add(new WorkExperience
         {
             Company = "Example Ltd",
@@ -76,6 +78,7 @@ public sealed class CareerRecordJobMlBuilderTests
         Assert.Empty(errors);
         Assert.Equal("career_record", reparsed.Data.Header.Profile);
         Assert.Contains("# Jane Smith", reparsed.Markdown);
+        Assert.Contains("+44 1234 567890 - please email in the first instance -", reparsed.Markdown);
         Assert.Contains(reparsed.Data.Claims, claim => claim.Type == "achievement");
         Assert.Contains(reparsed.Data.Sources, source => source.Name == "source.docx");
         var repository = Assert.Single(reparsed.Data.Sources, source => source.Type == "repository");

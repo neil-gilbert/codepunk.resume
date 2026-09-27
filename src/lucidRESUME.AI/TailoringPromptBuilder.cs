@@ -134,6 +134,7 @@ public static class TailoringPromptBuilder
         AppendPersonalEvidence(sb, "name", resume.Personal.FullName);
         AppendPersonalEvidence(sb, "email", resume.Personal.Email);
         AppendPersonalEvidence(sb, "phone", resume.Personal.Phone);
+        AppendPersonalEvidence(sb, "contact-preference", resume.Personal.ContactPreference);
         AppendPersonalEvidence(sb, "location", resume.Personal.Location);
         AppendPersonalEvidence(sb, "linkedin", resume.Personal.LinkedInUrl);
         AppendPersonalEvidence(sb, "github", resume.Personal.GitHubUrl);
@@ -189,6 +190,7 @@ public static class TailoringPromptBuilder
         if (!string.IsNullOrWhiteSpace(resume.Personal.FullName)) refs.Add("personal:name");
         if (!string.IsNullOrWhiteSpace(resume.Personal.Email)) refs.Add("personal:email");
         if (!string.IsNullOrWhiteSpace(resume.Personal.Phone)) refs.Add("personal:phone");
+        if (!string.IsNullOrWhiteSpace(resume.Personal.ContactPreference)) refs.Add("personal:contact-preference");
         if (!string.IsNullOrWhiteSpace(resume.Personal.Location)) refs.Add("personal:location");
         if (!string.IsNullOrWhiteSpace(resume.Personal.LinkedInUrl)) refs.Add("personal:linkedin");
         if (!string.IsNullOrWhiteSpace(resume.Personal.GitHubUrl)) refs.Add("personal:github");

@@ -159,6 +159,7 @@ public sealed class SemanticCompressor
             FullName = Accepted(sourceLedger, "personal:name") ? resume.Personal.FullName : null,
             Email = resume.Personal.Email,
             Phone = resume.Personal.Phone,
+            ContactPreference = resume.Personal.ContactPreference,
             Location = resume.Personal.Location,
             LinkedInUrl = resume.Personal.LinkedInUrl,
             GitHubUrl = resume.Personal.GitHubUrl,
@@ -178,7 +179,13 @@ public sealed class SemanticCompressor
         md.AppendLine($"# {resume.Personal.FullName ?? ""}");
         var contactParts = new List<string>();
         if (!string.IsNullOrEmpty(resume.Personal.Email)) contactParts.Add(resume.Personal.Email);
-        if (!string.IsNullOrEmpty(resume.Personal.Phone)) contactParts.Add(resume.Personal.Phone);
+        if (!string.IsNullOrEmpty(resume.Personal.Phone))
+        {
+            var phone = resume.Personal.Phone;
+            if (!string.IsNullOrWhiteSpace(resume.Personal.ContactPreference))
+                phone += $" - {resume.Personal.ContactPreference} -";
+            contactParts.Add(phone);
+        }
         if (!string.IsNullOrEmpty(resume.Personal.Location)) contactParts.Add(resume.Personal.Location);
         if (!string.IsNullOrEmpty(resume.Personal.LinkedInUrl)) contactParts.Add(resume.Personal.LinkedInUrl);
         if (!string.IsNullOrEmpty(resume.Personal.GitHubUrl)) contactParts.Add(resume.Personal.GitHubUrl);

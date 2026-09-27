@@ -67,6 +67,15 @@ public sealed class LlamaSharpIntegrationTests
     }
 
     [Fact]
+    public void RemoveThinking_StripsGemmaChannelMarkers()
+    {
+        var result = LlamaSharpRuntime.RemoveThinking(
+            "<|channel>thought\nprivate scratchpad<channel|><|channel>final\n{\"answer\":true}<turn|>");
+
+        Assert.Equal("{\"answer\":true}", result.Trim());
+    }
+
+    [Fact]
     public async Task DownloadAsync_CommitsCompletedDownloadToConfiguredPath()
     {
         var testDirectory = Path.Combine(Path.GetTempPath(), $"lucidresume-llama-{Guid.NewGuid():N}");

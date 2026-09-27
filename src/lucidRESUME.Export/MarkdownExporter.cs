@@ -43,7 +43,10 @@ public sealed class MarkdownExporter : IResumeExporter
 
         var contacts = new List<string>();
         if (p.Email != null) contacts.Add(p.Email);
-        if (p.Phone != null) contacts.Add(p.Phone);
+        if (p.Phone != null)
+            contacts.Add(string.IsNullOrWhiteSpace(p.ContactPreference)
+                ? p.Phone
+                : $"{p.Phone} - {p.ContactPreference} -");
         if (p.Location != null) contacts.Add(p.Location);
         if (p.LinkedInUrl != null) contacts.Add(p.LinkedInUrl);
         if (p.GitHubUrl != null) contacts.Add(p.GitHubUrl);
