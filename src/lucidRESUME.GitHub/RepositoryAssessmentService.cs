@@ -77,8 +77,8 @@ public static class RepositoryAssessmentService
             $"Observed activity spans {spanDays / 365.25:F1} years; last push was {inactiveDays:F0} days ago."
         };
         if (repository.Archived) reasons.Add("Repository is archived; it remains historical evidence, not current activity.");
-        if (signals.HasTests) reasons.Add($"Test structure observed ({signals.TestFileCount} matching files)." );
-        if (signals.HasCi) reasons.Add($"CI/workflow structure observed ({signals.WorkflowCount} workflows)." );
+        if (signals.HasTests) reasons.Add($"Test structure observed ({signals.TestFileCount} matching files).");
+        if (signals.HasCi) reasons.Add($"CI/workflow structure observed ({signals.WorkflowCount} workflows).");
         if (signals.HasReleaseAutomation) reasons.Add("Release or publishing workflow observed.");
         if (signals.HasBrowserExtension) reasons.Add("Browser extension manifest and runtime structure observed.");
         if (tree?.Truncated == true) reasons.Add("GitHub tree response was truncated; file observations are incomplete.");

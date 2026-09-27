@@ -15,7 +15,7 @@ public static class GitHubImportCommand
 
         var configOpt = new Option<FileInfo?>("--config") { Description = "Path to lucidresume.json config" };
         var outputOpt = new Option<FileInfo?>("--output")
-            { Description = "Optional JSON repository audit output" };
+        { Description = "Optional JSON repository audit output" };
 
         var cmd = new Command("github-import", "Import skills from GitHub public repos");
         cmd.Options.Add(usernameOpt);

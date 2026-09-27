@@ -9,7 +9,7 @@ on:
       version:
         description: 'Release version, without leading v (for example, 1.0.0)'
         required: true
-        default: '0.1.0'
+        default: '2.3.0'
 
 permissions:
   contents: write
@@ -286,13 +286,14 @@ jobs:
           version="${{ steps.version.outputs.VERSION }}"
           name="lucidRESUME-${version}-docs"
           out_dir="artifacts/docs/${name}"
+          release_notes="docs/release-notes/v${version}.md"
           mkdir -p "$out_dir" artifacts/release
           {
             echo "# lucidRESUME Documentation Archive"
             echo
             echo "Version: ${version}"
             echo
-          echo "Generated from the product guide, architecture, product-assets contract, user manual, compiler guide, JobML and cJobML specifications, and GitHub extension."
+            echo "Generated from the product guide, architecture, user manual, release notes, compiler and output guides, JobML specifications, parsing research, ATS research, and browser-extension documentation."
             echo
             echo "---"
             echo
@@ -325,11 +326,43 @@ jobs:
             echo "---"
             echo
             sed -n '1,$p' docs/jobml-github-extension-0.1.md
+            echo
+            echo "---"
+            echo
+            sed -n '1,$p' docs/jobml-package-extension-0.1.md
+            echo
+            echo "---"
+            echo
+            sed -n '1,$p' docs/resume-output-design.md
+            echo
+            echo "---"
+            echo
+            sed -n '1,$p' docs/jev-parsing-experiment.md
+            echo
+            echo "---"
+            echo
+            sed -n '1,$p' docs/chrome-evidence-filler.md
+            echo
+            echo "---"
+            echo
+            sed -n '1,$p' docs/research/2026-09-26-resume-cv-ats-review.md
+            if [ -f "$release_notes" ]; then
+              echo
+              echo "---"
+              echo
+              sed -n '1,$p' "$release_notes"
+            fi
           } > "${out_dir}/lucidRESUME-docs-single-page.md"
           cp README.md docs/architecture.md docs/product-assets.md docs/jobml-web-compiler.md \
             docs/jobml-0.1.md docs/jobml-0.1-specification.md \
-            docs/cjobml-0.1-specification.md docs/jobml-github-extension-0.1.md docs/jobml-0.1.schema.json \
+            docs/cjobml-0.1-specification.md docs/jobml-github-extension-0.1.md \
+            docs/jobml-package-extension-0.1.md docs/resume-output-design.md \
+            docs/jev-parsing-experiment.md docs/chrome-evidence-filler.md \
+            docs/research/2026-09-26-resume-cv-ats-review.md docs/jobml-0.1.schema.json \
             src/lucidRESUME/Resources/user-manual.md "$out_dir/"
+          if [ -f "$release_notes" ]; then
+            cp "$release_notes" "$out_dir/release-notes.md"
+          fi
           (cd artifacts/docs && zip -qr "../release/${name}.zip" "$name")
           tar -czf "artifacts/release/${name}.tar.gz" -C artifacts/docs "$name"
           sha256sum "artifacts/release/${name}.zip" > "artifacts/release/${name}.zip.sha256"
@@ -345,11 +378,74 @@ jobs:
             artifacts/release/*.sha256
           if-no-files-found: error
 
+  chrome-extension:
+    name: Build experimental Chrome extension
+    needs: release-validation
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extensions/lucidresume-chrome/package-lock.json
+
+      - name: Install and audit
+        working-directory: extensions/lucidresume-chrome
+        run: |
+          npm ci
+          npm audit --audit-level=high
+
+      - name: Check, test, and build
+        working-directory: extensions/lucidresume-chrome
+        run: |
+          npm run check
+          npm test
+          npm run build
+
+      - name: Test representative ATS form shapes
+        working-directory: extensions/lucidresume-chrome
+        run: |
+          python3 -m venv "$RUNNER_TEMP/lucidresume-form-tests"
+          "$RUNNER_TEMP/lucidresume-form-tests/bin/pip" install -r test/e2e/requirements.txt
+          "$RUNNER_TEMP/lucidresume-form-tests/bin/python" test/e2e/form_matrix.py \
+            --chrome "$(command -v google-chrome)" \
+            --output "$RUNNER_TEMP/lucidresume-form-matrix"
+
+      - name: Package extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          name="lucidRESUME-${version}-chrome-extension"
+          stage="artifacts/chrome/${name}"
+          mkdir -p "$stage" artifacts/release
+          cp -R extensions/lucidresume-chrome/dist/. "$stage/"
+          cp extensions/lucidresume-chrome/README.md extensions/lucidresume-chrome/PRIVACY.md "$stage/"
+          (cd artifacts/chrome && zip -qr "../release/${name}.zip" "$name")
+          sha256sum "artifacts/release/${name}.zip" > "artifacts/release/${name}.zip.sha256"
+
+      - name: Upload extension archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: lucidRESUME-chrome-extension
+          path: |
+            artifacts/release/*.zip
+            artifacts/release/*.sha256
+          if-no-files-found: error
+
   github-release:
     name: Publish GitHub release
-    needs: [publish-app, docs-archive]
+    needs: [publish-app, docs-archive, chrome-extension]
     runs-on: ubuntu-24.04
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - uses: actions/checkout@v7
@@ -364,7 +460,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ github.event.inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
           cat > artifacts/release-notes.md <<EOF
           ## lucidRESUME ${version}
 
@@ -394,8 +494,9 @@ jobs:
           | macOS Apple Silicon | \`osx-arm64\` |
           | Linux Intel/AMD | \`linux-x64\` |
           | Linux ARM | \`linux-arm64\` |
+          | Chrome 138+ experimental extension | \`chrome-extension\` |
 
-          Windows builds are \`.zip\`, macOS and Linux are \`.tar.gz\`. Each archive has a matching \`.sha256\` checksum file. The docs archive includes a single-page Markdown reference, \`lucidRESUME-docs-single-page.md\`.
+          Windows builds are \`.zip\`, macOS and Linux are \`.tar.gz\`. The experimental Chrome extension is a separate \`.zip\` for developer-mode installation. Each archive has a matching \`.sha256\` checksum file. The docs archive includes a single-page Markdown reference, \`lucidRESUME-docs-single-page.md\`.
 
           ### Basic Usage
 

@@ -160,7 +160,7 @@ public sealed class CJobMlProjectionTests
         const string secondPassage = "Led another platform team.";
         full = full with { Markdown = full.Markdown + $"\n\n## Role Two {{#role-two}}\n\n{secondPassage}" };
         full.Data.Entities.Add(new JobMlEntity
-            { Id = "role-two", Type = "experience", Name = "Role Two", Source = "#role-two" });
+        { Id = "role-two", Type = "experience", Name = "Role Two", Source = "#role-two" });
         full.Data.Claims.Add(new JobMlClaim
         {
             Id = "role-two-claim",

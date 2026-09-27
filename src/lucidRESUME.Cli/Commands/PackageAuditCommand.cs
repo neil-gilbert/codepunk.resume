@@ -11,9 +11,9 @@ public static class PackageAuditCommand
     public static Command Build()
     {
         var publisher = new Option<string>("--publisher")
-            { Required = true, Description = "NuGet publisher/profile search term" };
+        { Required = true, Description = "NuGet publisher/profile search term" };
         var output = new Option<FileInfo?>("--output")
-            { Description = "Optional JSON audit output" };
+        { Description = "Optional JSON audit output" };
         var config = new Option<FileInfo?>("--config") { Description = "Path to lucidresume.json config" };
         var command = new Command("package-audit",
             "Audit public NuGet packages and group them into searchable product families")

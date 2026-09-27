@@ -121,7 +121,7 @@ public sealed partial class NuGetPackageAuditService(HttpClient http)
     {
         var packages = new List<NuGetPackageRecord>();
         const int pageSize = 100;
-        for (var skip = 0;; skip += pageSize)
+        for (var skip = 0; ; skip += pageSize)
         {
             var separator = endpoint.Contains('?') ? '&' : '?';
             var uri = $"{endpoint}{separator}q={Uri.EscapeDataString(query)}&skip={skip}&take={pageSize}&prerelease=true&semVerLevel=2.0.0";

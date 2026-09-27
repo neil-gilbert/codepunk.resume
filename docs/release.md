@@ -15,6 +15,10 @@ The workflow publishes self-contained application archives for:
 | `linux-x64` | Linux | `.tar.gz` |
 | `linux-arm64` | Linux | `.tar.gz` |
 
+The release also publishes an experimental Chrome extension archive. It is an
+unpacked Manifest V3 build for developer-mode installation, not a Chrome Web
+Store package.
+
 Each archive is accompanied by a `.sha256` checksum file.
 
 The release also includes a documentation archive in both `.zip` and `.tar.gz` formats. That archive contains:
@@ -26,6 +30,12 @@ The release also includes a documentation archive in both `.zip` and `.tar.gz` f
 - `jobml-0.1-specification.md` - normative JobML document and processor rules.
 - `cjobml-0.1-specification.md` - compact publication projection and parser rules.
 - `jobml-github-extension-0.1.md` - repository quality, attribution, and skill observation extension.
+- `jobml-package-extension-0.1.md` - package-family and registry-observation extension.
+- `jobml-web-compiler.md` - ASP.NET Core publication and deterministic compilation guide.
+- `chrome-evidence-filler.md` - on-device form-mapping experiment, privacy model, and limitations.
+- `jev-parsing-experiment.md` - bounded parsing decisions and benchmark procedure.
+- `resume-output-design.md` - Markdown, DOCX, PDF, and cJobML output contract.
+- `2026-09-26-resume-cv-ats-review.md` - sourced format and ATS compatibility research.
 - `jobml-0.1.schema.json` - deterministic validation schema.
 
 The GitHub release page itself is populated with Markdown release notes that cover basic usage, configuration options, and macOS Gatekeeper guidance.
@@ -50,19 +60,22 @@ matching macOS runner before upload.
 
 1. Ensure CI is green on `main`.
 2. Choose a semantic version in the current `2.x` release line, for example
-   `2.2.0`.
+   `2.3.0`.
 3. Create and push the tag:
 
 ```bash
-git tag v2.2.0
-git push origin v2.2.0
+git tag v2.3.0
+git push origin v2.3.0
 ```
 
 The `Release - App Archives` workflow will build, archive, checksum, and attach the files to a GitHub release.
 
 ## Manual Dry Run
 
-Use the workflow dispatch button in GitHub Actions and provide a version such as `0.1.0-preview`. Manual runs upload artifacts to the workflow run but do not publish a GitHub release unless the run is for a `v*` tag.
+Use the workflow dispatch button in GitHub Actions and provide a version such as
+`2.3.0-rc1`. Manual runs build the same application, documentation, and Chrome
+extension archives and retain them as workflow artifacts, but do not publish a
+GitHub release. Only a pushed `v*` tag can publish one.
 
 ## Archive Policy
 

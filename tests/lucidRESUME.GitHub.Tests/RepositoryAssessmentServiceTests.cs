@@ -79,14 +79,14 @@ public sealed class RepositoryAssessmentServiceTests
 
     private static GitHubRepo Repository(string name, bool fork, int size,
         DateTimeOffset created, DateTimeOffset pushed) => new()
-    {
-        Name = name,
-        Fork = fork,
-        Size = size,
-        CreatedAt = created,
-        PushedAt = pushed,
-        Description = "Example repository"
-    };
+        {
+            Name = name,
+            Fork = fork,
+            Size = size,
+            CreatedAt = created,
+            PushedAt = pushed,
+            Description = "Example repository"
+        };
 
     private static GitHubTree Tree(params string[] paths) => new()
     {

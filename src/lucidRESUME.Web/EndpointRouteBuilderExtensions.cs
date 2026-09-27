@@ -202,8 +202,13 @@ public static class EndpointRouteBuilderExtensions
                 .DistinctBy(passage => (passage.SourceStart, passage.SourceLength))
                 .OrderBy(passage => passage.SourceStart)
                 .ToList();
-            return new { Entity = entity, Claims = claims, Passages = passages,
-                Start = passages.FirstOrDefault()?.SourceStart ?? int.MaxValue };
+            return new
+            {
+                Entity = entity,
+                Claims = claims,
+                Passages = passages,
+                Start = passages.FirstOrDefault()?.SourceStart ?? int.MaxValue
+            };
         }).OrderBy(item => item.Start);
 
         foreach (var item in ordered)
