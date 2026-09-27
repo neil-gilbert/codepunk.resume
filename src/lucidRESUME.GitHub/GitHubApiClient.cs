@@ -92,6 +92,14 @@ public sealed class GitHubApiClient
                ?? new Dictionary<string, long>();
     }
 
+    public async Task<GitHubTree> GetRepoTreeAsync(
+        string owner, string repo, string revision, CancellationToken ct)
+    {
+        var response = await GetAsync(
+            $"repos/{owner}/{repo}/git/trees/{Uri.EscapeDataString(revision)}?recursive=1", ct);
+        return (await response.Content.ReadFromJsonAsync<GitHubTree>(ct)) ?? new GitHubTree();
+    }
+
     private async Task<HttpResponseMessage> GetAsync(string path, CancellationToken ct)
     {
         if (_remainingRequests == 0)

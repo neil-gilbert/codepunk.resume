@@ -260,6 +260,18 @@ The **My Data** page shows everything extracted about you in one place:
 - **Career Timeline** - Gantt chart showing your roles positioned by date
 - **Skill Communities** - UMAP projection of your skills colored by Leiden community clusters
 
+### Career anchors
+
+The Experience list includes an **Always include** control. Use it for a
+career-defining role which should remain in every targeted résumé even when an
+older date or different vocabulary gives it a lower relevance score. Anchors
+are rendered compactly alongside up to five relevance-selected roles, so use
+them sparingly.
+
+An anchor is an editorial preference, not stronger evidence. It does not make a
+company prestigious, improve semantic coverage or bypass review and drift
+checks. The selected role still uses only accepted, current ledger evidence.
+
 ### Skill Ledger
 - Filter by category or search by name
 - Click any skill to expand and see every piece of evidence (which job, which bullet, what date range, what confidence)
@@ -638,11 +650,22 @@ Choose **System**, **Light**, or **Dark** from the dropdown at the top of the Pr
 
 ### GitHub Import
 
-Enter your GitHub username and click **Import** to extract skills from your public repos:
+Enter your GitHub username and click **Import** to extract searchable evidence from your public repos:
 - Languages reported by GitHub Linguist, weighted by code bytes
 - Topics from repo metadata
 - README analysis via lucidRAG (BERT mode, no LLM needed)
 - Per-project profiles with technologies, skills, and time ranges
+- Original/fork status, repository age, activity span and recency
+- A bounded repository-tree audit for tests, CI, release workflows, package
+  manifests, documentation and browser-extension structure
+
+Archived and small repositories remain visible because they can be useful
+historical or experimental evidence. Forks and repositories below the evidence
+threshold do not contribute personal skills or selectable projects by default.
+Each assessment records when it was observed.
+
+Run the audit again to refresh these observations. lucidRESUME keeps stable
+provider-derived IDs and updates matching repository records in place.
 
 Supports personal access tokens for private repos and higher rate limits.
 
@@ -659,11 +682,17 @@ GitHub evidence is interpreted conservatively:
 - Forks, archived repositories, generated code, and missing attribution reduce
   the strength of an inference.
 
-The current importer analyses languages, topics, README content, dates, and basic
-repository metadata. Repository quality and authorship analysis are being added
-through the JobML GitHub extension. That extension keeps raw observations,
-OpenSSF Scorecard checks, workflow results, attribution, inferred skills, and
-human-accepted claims separate.
+The repository assessment reports separate originality, longevity,
+engineering-process, documentation and delivery dimensions. It ranks evidence
+for retrieval. It is not a personal-skill or general code-quality score.
+
+Enter a NuGet publisher name and click **Audit packages** to add public package
+families to the complete ledger. The audit combines the owner profile with
+official V3 package metadata, groups modular package IDs behind their source
+product, and records package count, tags, representative IDs and downloads at
+the time of observation. Downloads are registry activity, not proof of quality
+or proficiency. Package families only enter a short résumé when relevant to the
+target role.
 
 ### Work Preferences
 

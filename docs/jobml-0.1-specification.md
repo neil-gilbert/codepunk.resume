@@ -224,11 +224,32 @@ entities:
     type: experience
     name: Example Corp
     source: "#example-corp"
+    projection:
+      include: always
+      reason: Career anchor selected by the author.
 ```
 
 The `id`, `type`, `name`, and `source` fields are REQUIRED. Recommended types are
 `experience`, `project`, `education`, `qualification`, `publication`,
 `organisation`, and `product`.
+
+`projection` is an optional author-controlled publication preference. An entity
+with `projection.include: always` is a **career anchor**. A role-specific
+publication processor MUST reserve a section for at least one accepted,
+currently valid claim about each career anchor before relevance ranking consumes
+the remaining section budget. It MUST NOT create prose, waive evidence checks,
+strengthen a claim, or interpret the preference as proof that the organisation
+is prestigious. `relevant` is the default when the field is absent.
+
+Career anchors solve an editorial problem which semantic ranking cannot. An
+older, defining role may be worth retaining in every short résumé even when its
+vocabulary is not close to the current vacancy. The author makes that decision;
+the processor does not maintain a universal ranking of employers.
+
+The compact cJobML projection does not repeat this instruction. By publication
+time the anchored entity and its accepted claim are already present like any
+other selected section. The full JobML record retains the preference so another
+processor can reproduce the selection.
 
 ## 10. Claims
 
@@ -461,7 +482,8 @@ A minimum JobML 0.1 processor supports:
 
 A publication processor additionally supports deterministic cJobML projection,
 deduplicated numbered references, link resolution, and an optional full-JobML
-endpoint.
+endpoint. It also honours `projection.include: always` for accepted, valid career
+anchors.
 
 Embeddings, a universal skill ontology, cryptographic attestations, automatic
 prose rewriting, ATS integration, and repository cloning are not required.

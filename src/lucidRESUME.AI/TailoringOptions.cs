@@ -19,6 +19,13 @@ public sealed class TailoringOptions
     public float TermNormalizationMinSimilarity { get; set; } = 0.85f;
 
     /// <summary>
+    /// Optional author-selected companies whose roles should remain visible in every
+    /// projection. Matching is case-insensitive after common legal suffixes are removed.
+    /// This is an editorial preference, not an inferred prestige score.
+    /// </summary>
+    public List<string> CareerAnchorCompanies { get; set; } = [];
+
+    /// <summary>
     /// Tone guidance injected into the tailoring prompt per company type.
     /// Keys must match <see cref="lucidRESUME.Core.Models.Jobs.CompanyType"/> enum names.
     /// </summary>

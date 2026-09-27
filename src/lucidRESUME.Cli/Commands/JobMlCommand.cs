@@ -2,6 +2,8 @@ using System.CommandLine;
 using System.Text.Json;
 using lucidRESUME.Cli.Infrastructure;
 using lucidRESUME.Export;
+using lucidRESUME.GitHub;
+using lucidRESUME.Core.Models.Resume;
 using lucidRESUME.Ingestion.Web;
 using lucidRESUME.JobML;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,9 +37,13 @@ public static class JobMlCommand
         { Description = "Write the JobML career record to this file instead of stdout" };
         outputOption.Aliases.Add("-o");
         var configOption = new Option<FileInfo?>("--config") { Description = "Path to lucidresume.json config" };
+        var githubOption = new Option<string?>("--github")
+        { Description = "Optional GitHub username to audit into the complete career record" };
+        var nugetOption = new Option<string?>("--nuget-publisher")
+        { Description = "Optional NuGet publisher profile to audit into package-family evidence" };
         var command = new Command("career-record",
             "Ingest career sources and export one full JobML career_record document")
-            { resumeOption, directoryOption, outputOption, configOption };
+            { resumeOption, directoryOption, outputOption, configOption, githubOption, nugetOption };
         command.SetAction(async (result, cancellationToken) =>
         {
             var resume = result.GetValue(resumeOption);
@@ -47,8 +53,30 @@ public static class JobMlCommand
             if (resume is not null && directory is not null)
                 throw new ArgumentException("Use either --resume or --resume-dir, not both.");
 
-            var services = ServiceBootstrap.Build(result.GetValue(configOption)?.FullName);
+            using var services = ServiceBootstrap.Build(result.GetValue(configOption)?.FullName);
             var transcript = await ResumeInputHelper.LoadAsync(services, resume, directory, cancellationToken);
+            var github = result.GetValue(githubOption);
+            if (!string.IsNullOrWhiteSpace(github))
+            {
+                var audit = await services.GetRequiredService<GitHubSkillImporter>()
+                    .ImportAsync(github.Trim(), cancellationToken);
+                MergeProjects(transcript, audit.Projects);
+                if (audit.Profile is { } profile)
+                {
+                    transcript.Personal.GitHubUrl ??= profile.HtmlUrl;
+                    transcript.Personal.FullName ??= profile.Name;
+                    transcript.Personal.WebsiteUrl ??= profile.Blog;
+                }
+                Console.Error.WriteLine($"GitHub audit: {audit.ProjectProfiles.Count} repository observations, {audit.ReposSkipped} excluded from personal evidence");
+            }
+            var nugetPublisher = result.GetValue(nugetOption);
+            if (!string.IsNullOrWhiteSpace(nugetPublisher))
+            {
+                var audit = await services.GetRequiredService<NuGetPackageAuditService>()
+                    .AuditAsync(nugetPublisher.Trim(), cancellationToken);
+                MergeProjects(transcript, audit.Projects);
+                Console.Error.WriteLine($"NuGet audit: {audit.PackageCount} packages grouped into {audit.Families.Count} product families");
+            }
             var file = await services.GetRequiredService<CareerRecordJobMlBuilder>()
                 .BuildAsync(transcript, cancellationToken);
             var diagnostics = JobMlProcessor.Validate(file);
@@ -67,6 +95,10 @@ public static class JobMlCommand
         });
         return command;
     }
+
+    private static void MergeProjects(
+        ResumeDocument transcript,
+        IEnumerable<Project> projects) => ProjectEvidenceMerger.MergeAuditObservations(transcript, projects);
 
     private static Command BuildCompact()
     {
@@ -133,7 +165,7 @@ public static class JobMlCommand
                 url.Scheme is not ("http" or "https"))
                 throw new ArgumentException("--url must be an absolute HTTP or HTTPS URL.");
 
-            var services = ServiceBootstrap.Build();
+            using var services = ServiceBootstrap.Build();
             var linkedPost = await services.GetRequiredService<LinkedPostImporter>()
                 .ImportAsync(url, cancellationToken);
             if (!claim.Evidence.Any(item => string.Equals(item.Uri?.TrimEnd('/'),

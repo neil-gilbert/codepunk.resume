@@ -87,7 +87,11 @@ public sealed class AppState
     {
         NormalizeResumes();
         if (Resumes.Count == 0) return null;
-        if (Resumes.Count == 1) return Resumes[0];
+        if (Resumes.Count == 1)
+        {
+            ApplyCareerAnchors(Resumes[0].Experience, Overrides);
+            return Resumes[0];
+        }
 
         var selected = SelectedResume ?? Resumes.Last();
         var aggregate = ResumeDocument.Create("All imported resumes", "application/vnd.lucidresume.aggregate", 0);
@@ -103,6 +107,7 @@ public sealed class AppState
         aggregate.JobMlRevision = selected.JobMlRevision;
 
         aggregate.Experience = DeduplicateExperience(Resumes.SelectMany(r => r.Experience).ToList());
+        ApplyCareerAnchors(aggregate.Experience, Overrides);
         aggregate.Education = DeduplicateEducation(Resumes.SelectMany(r => r.Education).ToList());
         aggregate.Certifications = Resumes.SelectMany(r => r.Certifications)
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
@@ -258,10 +263,33 @@ public sealed class AppState
             StartDate = Min(primary.StartDate, secondary.StartDate),
             EndDate = primary.IsCurrent || secondary.IsCurrent ? null : Max(primary.EndDate, secondary.EndDate),
             IsCurrent = primary.IsCurrent || secondary.IsCurrent,
+            IsCareerAnchor = primary.IsCareerAnchor || secondary.IsCareerAnchor,
             Technologies = techs.ToList(),
             Achievements = achievements,
         };
     }
+
+    private static void ApplyCareerAnchors(IEnumerable<WorkExperience> experience, UserOverrides overrides)
+    {
+        var companies = overrides.CareerAnchorCompanies
+            .Select(NormalizeCompany)
+            .Where(company => company.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var role in experience)
+        {
+            role.IsCareerAnchor |= overrides.CareerAnchorExperienceIds.Contains(role.Id) ||
+                                   overrides.CareerAnchorRoleKeys.Contains(CareerAnchorRoleKey(role)) ||
+                                   companies.Contains(NormalizeCompany(role.Company ?? ""));
+        }
+    }
+
+    public static string CareerAnchorRoleKey(WorkExperience experience) =>
+        $"{NormalizeCompany(experience.Company ?? "")}|{NormalizeIdentity(experience.Title ?? "")}";
+
+    private static string NormalizeIdentity(string value) =>
+        string.Join(' ', value.Trim().ToLowerInvariant()
+            .Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries));
 
     private static List<Education> DeduplicateEducation(List<Education> all)
     {

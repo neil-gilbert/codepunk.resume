@@ -3,7 +3,7 @@
 Status: Experimental Draft
 
 Namespace: `lucidresume.github`
-Last updated: 2026-09-18
+Last updated: 2026-09-27
 
 This extension records repository observations, quality assessments, contribution
 attribution, and skill candidates without pretending that any one of them proves
@@ -71,7 +71,10 @@ The extension reuses established signals instead of inventing one opaque score:
 
 ## 3. Repository record
 
-Each repository record MUST identify an immutable revision and observation time.
+A repository record used to support a claim MUST identify an immutable revision
+and observation time. An observation-only inventory record MAY use `unknown` for
+the revision when a processor has not fetched the tree, but it MUST NOT support a
+core claim until pinned evidence is available.
 
 ```yaml
 extensions:
@@ -88,8 +91,9 @@ extensions:
         archived: false
 ```
 
-`revision` MUST be a commit SHA or another immutable provider revision. Moving
-branches MAY be shown in the UI but MUST NOT replace it.
+For evidential records, `revision` MUST be a commit SHA or another immutable
+provider revision. Moving branches MAY be shown in the UI but MUST NOT replace
+it.
 
 ## 4. Attribution
 
@@ -269,13 +273,29 @@ The current importer implements:
 - repository topics;
 - README summarisation and taxonomy matching;
 - project dates and URLs;
-- a heuristic evidence-strength value.
+- original/fork classification, repository age, active span, and recent activity;
+- archived and small repositories retained as bounded historical observations;
+- revision-pinned tree inspection for a bounded set of repositories;
+- observed test, CI, release, package-manifest, documentation, and browser-extension structure;
+- an explainable, versioned retrieval assessment with separate originality,
+  longevity, engineering-process, documentation, and delivery dimensions.
 
-The current heuristic combines size, skill count, stars, and recency. It is a
-ranking aid, not a standards-based repository quality score. It MUST NOT be
-serialised as an OpenSSF or JobML quality assessment.
+The `lucidresume-repository-assessment` score ranks evidence for retrieval. It
+does not include stars or forks as evidence of competence, is not a general
+code-quality score, and MUST NOT be serialised as OpenSSF Scorecard output.
+Popularity remains a separate observation.
 
-The next implementation stage SHOULD add immutable revision capture, commit
-attribution, manifests and direct dependencies, workflow status, community
-metrics, and versioned OpenSSF Scorecard results before promoting repository
-observations into reviewable JobML claims.
+An implementation MAY retain an ineligible repository observation in this
+extension for completeness. It MUST NOT promote that observation into a core
+personal claim or selected résumé project merely because its content matches a
+job requirement. This applies by default to unattributed forks and repositories
+below a processor's evidence threshold.
+
+Repository IDs SHOULD be derived from stable provider identity rather than an
+import-session identifier. Repeated observations of the same provider URI MUST
+update the existing record so drift checks compare like with like.
+
+The next implementation stage SHOULD add commit attribution, direct dependency
+inspection, actual workflow conclusions, community metrics, release records,
+package-registry relationships, and versioned OpenSSF Scorecard results before
+promoting repository observations into reviewable JobML claims.

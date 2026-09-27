@@ -32,6 +32,18 @@ public sealed class UserOverrides
 
     /// <summary>User's preferred variant per experience entry (Id → chosen variant index).</summary>
     public Dictionary<string, int> SelectedVariant { get; set; } = [];
+
+    /// <summary>Roles the author has explicitly chosen to retain in every projection.</summary>
+    public HashSet<Guid> CareerAnchorExperienceIds { get; set; } = [];
+
+    /// <summary>
+    /// Stable normalised company/title keys for role anchors. These survive re-imports
+    /// which assign a new internal experience identifier.
+    /// </summary>
+    public HashSet<string> CareerAnchorRoleKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Companies whose roles the author has explicitly chosen to retain in every projection.</summary>
+    public HashSet<string> CareerAnchorCompanies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class DismissedEvidenceRecord

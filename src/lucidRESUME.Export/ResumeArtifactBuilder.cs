@@ -157,7 +157,14 @@ public sealed class ResumeArtifactBuilder
                 Id = $"experience:{experience.Id:N}",
                 Type = "experience",
                 Name = experience.Company ?? experience.Title ?? "Experience",
-                Source = $"#experience-{experience.Id:N}"
+                Source = $"#experience-{experience.Id:N}",
+                Projection = experience.IsCareerAnchor
+                    ? new JobMlProjectionPreference
+                    {
+                        Include = "always",
+                        Reason = "Career anchor selected by the author."
+                    }
+                    : null
             });
         }
 

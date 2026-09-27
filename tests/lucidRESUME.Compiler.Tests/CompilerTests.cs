@@ -53,6 +53,64 @@ public sealed class CompilerTests
     }
 
     [Fact]
+    public async Task Compiler_retains_author_selected_career_anchor_without_requirement_match()
+    {
+        const string anchorProse = "Personally executed the first public production release of ASP.NET MVC.";
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        file = file with
+        {
+            Markdown = file.Markdown + $"\n\n### Microsoft {{#microsoft-role}}\n\n<p id=\"microsoft-release\">\n{anchorProse}\n</p>"
+        };
+        file.Data.Entities.Add(new JobMlEntity
+        {
+            Id = "microsoft-role",
+            Type = "experience",
+            Name = "Program Manager II, Microsoft Corp",
+            Source = "#microsoft-role",
+            Projection = new JobMlProjectionPreference
+            {
+                Include = "always",
+                Reason = "Career anchor selected by the author."
+            }
+        });
+        file.Data.Claims.Add(new JobMlClaim
+        {
+            Id = "microsoft-release",
+            Subject = "microsoft-role",
+            Type = "achievement",
+            Statement = anchorProse,
+            Origin = "declared",
+            Review = "accepted",
+            Evidence =
+            [
+                new JobMlEvidence
+                {
+                    Type = "prose",
+                    Ref = "#microsoft-release",
+                    Fingerprint = new JobMlFingerprint
+                    {
+                        Text = MarkdownEvidenceIndex.Fingerprint(anchorProse)
+                    }
+                }
+            ]
+        });
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            parser.Serialize(file), file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "TypeScript and AWS platform leadership.",
+            new CompilationOptions { MaximumClaims = 1, MaximumSections = 1 });
+
+        Assert.Contains(anchorProse, result.HumanMarkdown);
+        Assert.Contains("Led a 15 engineer", result.HumanMarkdown);
+        Assert.Equal(2, result.Manifest.Sections.Count);
+        Assert.Contains(result.ProjectedJobMl.Data.Entities,
+            entity => entity.Id == "microsoft-role" && entity.Projection?.Include == "always");
+    }
+
+    [Fact]
     public async Task Compiler_never_selects_a_claim_which_requires_review()
     {
         var file = new JobMlParser().Parse(Fixture.Source);

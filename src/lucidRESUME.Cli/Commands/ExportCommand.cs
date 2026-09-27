@@ -55,7 +55,7 @@ public static class ExportCommand
                 return;
             }
 
-            var services = ServiceBootstrap.Build(config?.FullName);
+            using var services = ServiceBootstrap.Build(config?.FullName);
             var resumeParser = services.GetRequiredService<IResumeParser>();
             var exporters = services.GetServices<IResumeExporter>();
 

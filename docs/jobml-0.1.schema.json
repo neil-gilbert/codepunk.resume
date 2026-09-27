@@ -105,7 +105,15 @@
         "id": { "$ref": "#/$defs/id" },
         "type": { "type": "string", "minLength": 1 },
         "name": { "type": "string", "minLength": 1 },
-        "source": { "type": "string", "pattern": "^#" }
+        "source": { "type": "string", "pattern": "^#" },
+        "projection": {
+          "type": "object",
+          "required": ["include"],
+          "properties": {
+            "include": { "enum": ["always", "relevant"] },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        }
       }
     },
     "claim": {

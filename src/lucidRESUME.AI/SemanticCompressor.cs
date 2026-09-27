@@ -6,6 +6,7 @@ using lucidRESUME.Core.Models.Skills;
 using lucidRESUME.Core.Models.Evidence;
 using lucidRESUME.Matching;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
 namespace lucidRESUME.AI;
@@ -21,7 +22,7 @@ namespace lucidRESUME.AI;
 /// </summary>
 public sealed class SemanticCompressor
 {
-    private const int MaximumDetailedRoles = 6;
+    private const int MaximumRelevantRoles = 5;
     private const int MaximumSelectedProjects = 2;
     private const int MaximumSkillsPerCategory = 10;
     private const int MaximumSummaryWords = 105;
@@ -42,6 +43,7 @@ public sealed class SemanticCompressor
     private readonly IEmbeddingService _embedder;
     private readonly SkillTaxonomyService _taxonomy;
     private readonly ILogger<SemanticCompressor> _logger;
+    private readonly HashSet<string> _careerAnchorCompanies;
 
     public SemanticCompressor(
         SkillLedgerBuilder ledgerBuilder,
@@ -49,6 +51,7 @@ public sealed class SemanticCompressor
         SkillLedgerMatcher matcher,
         IEmbeddingService embedder,
         SkillTaxonomyService taxonomy,
+        IOptions<TailoringOptions> options,
         ILogger<SemanticCompressor> logger)
     {
         _ledgerBuilder = ledgerBuilder;
@@ -57,6 +60,10 @@ public sealed class SemanticCompressor
         _embedder = embedder;
         _taxonomy = taxonomy;
         _logger = logger;
+        _careerAnchorCompanies = options.Value.CareerAnchorCompanies
+            .Select(NormalizeCompany)
+            .Where(company => company.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -139,15 +146,12 @@ public sealed class SemanticCompressor
                 roleScores[experience.Id] += 8;
         }
 
-        var selectedRoleIds = resume.Experience
-            .Where(IsUsableRole)
-            .OrderByDescending(exp => roleScores.GetValueOrDefault(exp.Id))
-            .ThenByDescending(exp => exp.StartDate)
-            .Take(MaximumDetailedRoles)
-            .Select(exp => exp.Id)
-            .ToHashSet();
-
-        PreserveCareerDefiningRole(resume, roleProfile, roleScores, selectedRoleIds);
+        var selectedRoleIds = SelectDetailedRoleIds(
+            resume.Experience, roleScores, _careerAnchorCompanies, MaximumRelevantRoles);
+        var anchorCount = resume.Experience.Count(experience =>
+            selectedRoleIds.Contains(experience.Id) && IsCareerAnchor(experience, _careerAnchorCompanies));
+        if (anchorCount > 0)
+            _logger.LogInformation("Retained {Count} author-selected career anchor role(s)", anchorCount);
 
         var projection = ResumeDocument.Create(resume.FileName, resume.ContentType, resume.FileSizeBytes);
         projection.Personal = new PersonalInfo
@@ -220,6 +224,8 @@ public sealed class SemanticCompressor
             if (!selectedRoleIds.Contains(exp.Id)) continue;
 
             md.AppendLine($"### {exp.Title ?? ""} - {exp.Company ?? ""} {{#experience-{exp.Id:N}}}");
+            if (IsCareerAnchor(exp, _careerAnchorCompanies))
+                md.AppendLine("<!-- lucidresume:career-anchor -->");
             var dateRange = FormatDateRange(exp.StartDate, exp.EndDate, exp.IsCurrent);
             if (!string.IsNullOrEmpty(dateRange))
             {
@@ -241,12 +247,20 @@ public sealed class SemanticCompressor
                     relevantAchievements.Add(achievement);
             }
 
-            if (roleProfile is "CTO" or "VP of Engineering" or "Head of Engineering")
+            var isCareerAnchor = IsCareerAnchor(exp, _careerAnchorCompanies);
+            if (isCareerAnchor ||
+                roleProfile is "CTO" or "VP of Engineering" or "Head of Engineering")
             {
                 var definingAchievement = exp.Achievements.FirstOrDefault(IsCareerDefiningAchievement);
-                if (definingAchievement is not null &&
-                    relevantAchievements.All(existing => !string.Equals(existing, definingAchievement,
-                        StringComparison.Ordinal)))
+                if (definingAchievement is not null && isCareerAnchor)
+                {
+                    relevantAchievements.RemoveAll(existing => string.Equals(existing, definingAchievement,
+                        StringComparison.Ordinal));
+                    relevantAchievements.Insert(0, definingAchievement);
+                }
+                else if (definingAchievement is not null &&
+                         relevantAchievements.All(existing => !string.Equals(existing, definingAchievement,
+                             StringComparison.Ordinal)))
                 {
                     if (relevantAchievements.Count >= 3)
                         relevantAchievements[2] = definingAchievement;
@@ -264,11 +278,13 @@ public sealed class SemanticCompressor
                 StartDate = exp.StartDate,
                 EndDate = exp.EndDate,
                 IsCurrent = exp.IsCurrent,
+                IsCareerAnchor = IsCareerAnchor(exp, _careerAnchorCompanies),
                 Technologies = [.. exp.Technologies],
                 ImportSources = [.. exp.ImportSources]
             };
             var paragraph = string.IsNullOrEmpty(dateRange) ? 1 : 2;
-            foreach (var a in relevantAchievements.Take(3))
+            var maximumAchievements = isCareerAnchor ? 1 : 3;
+            foreach (var a in relevantAchievements.Take(maximumAchievements))
             {
                 md.AppendLine($"- {a}");
                 md.AppendLine();
@@ -287,28 +303,7 @@ public sealed class SemanticCompressor
             .Concat(roleProfile is null ? [] : _taxonomy.GetRoleSkills(roleProfile))
             .SelectMany(Tokens)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var rankedProjects = resume.Projects
-            .Where(project => !string.IsNullOrWhiteSpace(project.Name) &&
-                              !string.IsNullOrWhiteSpace(project.Description))
-            .Select(project => new
-            {
-                Project = project,
-                Score = Tokens(string.Join(' ', new[] { project.Name, project.Description }
-                        .Concat(project.Technologies).Where(value => !string.IsNullOrWhiteSpace(value))!))
-                    .Intersect(projectTerms).Count()
-            })
-            .Where(candidate => candidate.Score > 0)
-            .OrderByDescending(candidate => candidate.Score)
-            .ThenBy(candidate => candidate.Project.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var selectedProjects = new List<Project>();
-        var selectedProjectFamilies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var candidate in rankedProjects)
-        {
-            if (!selectedProjectFamilies.Add(ProjectFamily(candidate.Project.Name))) continue;
-            selectedProjects.Add(candidate.Project);
-            if (selectedProjects.Count == MaximumSelectedProjects) break;
-        }
+        var selectedProjects = SelectRelevantProjects(resume.Projects, projectTerms, MaximumSelectedProjects);
 
         if (selectedProjects.Count > 0)
         {
@@ -335,7 +330,9 @@ public sealed class SemanticCompressor
                     Technologies = selectedTechnologies,
                     Url = project.Url,
                     Date = project.Date,
-                    ImportSources = [.. project.ImportSources]
+                    ImportSources = [.. project.ImportSources],
+                    EvidenceMetadata = new Dictionary<string, string>(project.EvidenceMetadata,
+                        StringComparer.OrdinalIgnoreCase)
                 });
                 Bind(projection, sourceLedger, $"project:{project.Id:N}:description", $"#{anchor}:p1");
             }
@@ -477,39 +474,41 @@ public sealed class SemanticCompressor
             achievement.Contains("company through which", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void PreserveCareerDefiningRole(
-        ResumeDocument resume,
-        string? roleProfile,
+    internal static HashSet<Guid> SelectDetailedRoleIds(
+        IEnumerable<WorkExperience> experience,
         IReadOnlyDictionary<Guid, double> roleScores,
-        HashSet<Guid> selectedRoleIds)
+        IReadOnlySet<string>? careerAnchorCompanies = null,
+        int maximumRelevantRoles = MaximumRelevantRoles)
     {
-        if (roleProfile is not ("CTO" or "VP of Engineering" or "Head of Engineering")) return;
-
-        var definingRole = resume.Experience
+        var usable = experience
             .Where(IsUsableRole)
-            .Where(experience =>
-                experience.Title?.Contains("Program Manager", StringComparison.OrdinalIgnoreCase) == true &&
-                experience.Achievements.Any(achievement =>
-                    achievement.Contains("release", StringComparison.OrdinalIgnoreCase) ||
-                    achievement.Contains("product team", StringComparison.OrdinalIgnoreCase) ||
-                    achievement.Contains("open-source", StringComparison.OrdinalIgnoreCase)))
-            .OrderByDescending(experience => roleScores.GetValueOrDefault(experience.Id))
-            .ThenByDescending(experience => experience.StartDate)
-            .FirstOrDefault();
+            .ToList();
+        var anchors = usable
+            .Where(role => IsCareerAnchor(role, careerAnchorCompanies))
+            .OrderByDescending(role => roleScores.GetValueOrDefault(role.Id))
+            .ThenByDescending(role => role.StartDate)
+            .ToList();
+        var selected = anchors.Select(role => role.Id).ToHashSet();
+        selected.UnionWith(usable
+            .Where(role => !selected.Contains(role.Id))
+            .OrderByDescending(role => roleScores.GetValueOrDefault(role.Id))
+            .ThenByDescending(role => role.StartDate)
+            .Take(Math.Max(0, maximumRelevantRoles))
+            .Select(role => role.Id));
+        return selected;
+    }
 
-        if (definingRole is null || selectedRoleIds.Contains(definingRole.Id)) return;
+    private static bool IsCareerAnchor(WorkExperience experience, IReadOnlySet<string>? companies) =>
+        experience.IsCareerAnchor || companies?.Contains(NormalizeCompany(experience.Company ?? "")) == true;
 
-        var replaceable = resume.Experience
-            .Where(experience => selectedRoleIds.Contains(experience.Id))
-            .Where(experience => !IsContinuingCompanyRole(experience))
-            .Where(experience => RoleTitleSignal(experience.Title, roleProfile) < 6)
-            .OrderBy(experience => roleScores.GetValueOrDefault(experience.Id))
-            .ThenBy(experience => experience.StartDate)
-            .FirstOrDefault();
-
-        if (replaceable is null) return;
-        selectedRoleIds.Remove(replaceable.Id);
-        selectedRoleIds.Add(definingRole.Id);
+    internal static string NormalizeCompany(string company)
+    {
+        var normalized = Regex.Replace(company.ToLowerInvariant(), @"[^a-z0-9]+", " ").Trim();
+        string[] suffixes = [" limited", " ltd", " incorporated", " inc", " corporation", " corp", " plc", " llc"];
+        foreach (var suffix in suffixes)
+            if (normalized.EndsWith(suffix, StringComparison.Ordinal))
+                normalized = normalized[..^suffix.Length].TrimEnd();
+        return normalized;
     }
 
     private static bool IsCareerDefiningAchievement(string achievement) =>
@@ -551,15 +550,24 @@ public sealed class SemanticCompressor
         "Head of Engineering" => text.Contains("Head of Engineering", StringComparison.OrdinalIgnoreCase),
         "Lead Developer" => text.Contains("Lead Developer", StringComparison.OrdinalIgnoreCase) ||
                             text.Contains("Development Lead", StringComparison.OrdinalIgnoreCase) ||
-                            text.Contains("Lead Engineer", StringComparison.OrdinalIgnoreCase),
+                            text.Contains("Lead Engineer", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("Head of Software", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("Head of Development", StringComparison.OrdinalIgnoreCase) ||
+                            text.Contains("Head of Engineering", StringComparison.OrdinalIgnoreCase),
         _ => false
     };
 
-    private static double RoleTitleSignal(string? title, string role)
+    internal static double RoleTitleSignal(string? title, string role)
     {
         if (string.IsNullOrWhiteSpace(title)) return 0;
         if (role == "Lead Developer")
         {
+            // A hands-on head-of role is stronger evidence for an engineering-lead
+            // target than an old exact-title match. Titles are a hierarchy, not an
+            // exact-string taxonomy.
+            if (title.Contains("Head of Software", StringComparison.OrdinalIgnoreCase) ||
+                title.Contains("Head of Development", StringComparison.OrdinalIgnoreCase) ||
+                title.Contains("Head of Engineering", StringComparison.OrdinalIgnoreCase)) return 6;
             if (title.Contains("Lead Developer", StringComparison.OrdinalIgnoreCase) ||
                 title.Contains("Lead Engineer", StringComparison.OrdinalIgnoreCase)) return 4;
             if (title.Contains("Development Lead", StringComparison.OrdinalIgnoreCase)) return 2;
@@ -637,6 +645,40 @@ public sealed class SemanticCompressor
         return selected.Count == 0
             ? description
             : string.Join(' ', selected.OrderBy(item => item.Index).Select(item => item.Sentence));
+    }
+
+    internal static IReadOnlyList<Project> SelectRelevantProjects(
+        IEnumerable<Project> projects,
+        IReadOnlySet<string> targetTerms,
+        int maximum = MaximumSelectedProjects)
+    {
+        if (maximum <= 0 || targetTerms.Count == 0) return [];
+        var normalizedTargetTerms = targetTerms.SelectMany(Tokens)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ranked = projects
+            .Where(project => !string.IsNullOrWhiteSpace(project.Name) &&
+                              !string.IsNullOrWhiteSpace(project.Description) &&
+                              (!project.EvidenceMetadata.TryGetValue("eligible_for_personal_evidence", out var eligible) ||
+                               !bool.TryParse(eligible, out var mayUse) || mayUse))
+            .Select(project => new
+            {
+                Project = project,
+                Score = Tokens(string.Join(' ', new[] { project.Name, project.Description }
+                        .Concat(project.Technologies).Where(value => !string.IsNullOrWhiteSpace(value))!))
+                    .Intersect(normalizedTargetTerms).Count()
+            })
+            .Where(candidate => candidate.Score > 0)
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenBy(candidate => candidate.Project.Name, StringComparer.OrdinalIgnoreCase);
+        var selected = new List<Project>();
+        var families = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in ranked)
+        {
+            if (!families.Add(ProjectFamily(candidate.Project.Name))) continue;
+            selected.Add(candidate.Project);
+            if (selected.Count == maximum) break;
+        }
+        return selected;
     }
 
     private static List<string> SelectProjectTechnologies(

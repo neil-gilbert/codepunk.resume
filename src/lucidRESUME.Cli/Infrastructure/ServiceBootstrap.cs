@@ -17,7 +17,7 @@ namespace lucidRESUME.Cli.Infrastructure;
 
 public static class ServiceBootstrap
 {
-    public static IServiceProvider Build(string? configFile = null)
+    public static ServiceProvider Build(string? configFile = null)
     {
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)

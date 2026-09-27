@@ -1,4 +1,5 @@
 using lucidRESUME.Core.Interfaces;
+using lucidRESUME.Core.Models.Evidence;
 using lucidRESUME.Core.Models.Resume;
 using lucidRESUME.Export;
 using lucidRESUME.JobML;
@@ -8,6 +9,17 @@ namespace lucidRESUME.Core.Tests;
 
 public sealed class CareerRecordJobMlBuilderTests
 {
+    [Fact]
+    public void Provider_identity_guid_is_stable_and_case_insensitive()
+    {
+        Assert.Equal(
+            EvidenceLedgerBuilder.StableGuid("github:https://github.com/scottgal/lucidresume"),
+            EvidenceLedgerBuilder.StableGuid(" GITHUB:https://github.com/ScottGal/lucidRESUME "));
+        Assert.NotEqual(
+            EvidenceLedgerBuilder.StableGuid("github:https://github.com/scottgal/lucidresume"),
+            EvidenceLedgerBuilder.StableGuid("github:https://github.com/scottgal/lucidrag"));
+    }
+
     [Fact]
     public async Task Career_record_round_trips_with_sources_vectors_and_role_centroids()
     {
@@ -27,9 +39,28 @@ public sealed class CareerRecordJobMlBuilderTests
         resume.Projects.Add(new Project
         {
             Name = "Evidence compiler",
-            Description = "Built a provenance-aware career evidence compiler.",
+            Description = "Built a provenance-aware career evidence compiler.\n\nA second paragraph remains evidence, not an entity heading.",
             Technologies = ["C#"],
-            Url = "https://github.com/example/evidence-compiler"
+            Url = "https://github.com/example/evidence-compiler",
+            EvidenceMetadata = new Dictionary<string, string>
+            {
+                ["provider"] = "github",
+                ["repository_class"] = "sustained-product",
+                ["revision"] = new string('a', 40),
+                ["has_tests"] = "true"
+            }
+        });
+        resume.Projects.Add(new Project
+        {
+            Name = "Observed upstream fork",
+            Description = "An imported fork observation, not reviewed personal project evidence.",
+            Url = "https://github.com/example/upstream-fork",
+            EvidenceMetadata = new Dictionary<string, string>
+            {
+                ["provider"] = "github",
+                ["fork"] = "true",
+                ["eligible_for_personal_evidence"] = "false"
+            }
         });
         resume.Skills.AddRange([new Skill { Name = "TypeScript" }, new Skill { Name = "AWS" }]);
         var embedder = new DeterministicEmbedder();
@@ -57,6 +88,18 @@ public sealed class CareerRecordJobMlBuilderTests
         Assert.Contains("semantic_spaces:", serialized);
         Assert.Contains("role_centroids:", serialized);
         Assert.Contains("source_id:", serialized);
+        Assert.Contains("lucidresume.github:", serialized);
+        Assert.Contains("repository_class: sustained-product", serialized);
+        Assert.Contains(new string('a', 40), serialized);
+        Assert.Contains("Observed upstream fork", serialized);
+        Assert.Contains("fork: true", serialized);
+        Assert.Contains("eligible_for_personal_evidence: false", serialized);
+        Assert.DoesNotContain("observations:", serialized);
+        Assert.DoesNotContain(reparsed.Data.Claims,
+            claim => claim.Statement.Contains("Observed upstream fork", StringComparison.Ordinal));
+        Assert.Contains("## Evidence compiler {#entity-project-", reparsed.Markdown);
+        Assert.DoesNotContain("## Built a provenance-aware", reparsed.Markdown);
+        Assert.DoesNotContain(JobMlProcessor.Validate(reparsed), diagnostic => diagnostic.Code == "JML011");
     }
 
     private sealed class DeterministicEmbedder : IEmbeddingService, IEmbeddingSpaceDescriptor

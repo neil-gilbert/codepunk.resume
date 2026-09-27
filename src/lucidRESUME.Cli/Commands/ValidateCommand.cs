@@ -33,7 +33,7 @@ public static class ValidateCommand
             var output = result.GetValue(outputOpt);
             var config = result.GetValue(configOpt);
 
-            var sp = ServiceBootstrap.Build(config?.FullName);
+            using var sp = ServiceBootstrap.Build(config?.FullName);
             var parser = sp.GetRequiredService<IResumeParser>();
             var quality = sp.GetRequiredService<IResumeQualityAnalyser>();
 

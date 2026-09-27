@@ -55,7 +55,7 @@ public static class RenderCommand
             resume.IncludeCompactJobMl = result.GetValue(compactJobMlOption);
             MarkdownSectionParser.PopulateSections(resume, parsed.Markdown);
 
-            var services = ServiceBootstrap.Build(result.GetValue(configOption)?.FullName);
+            using var services = ServiceBootstrap.Build(result.GetValue(configOption)?.FullName);
             await ResumeOutputWriter.WriteAsync(
                 services, resume, result.GetValue(formatOption)!, output, cancellationToken);
         });

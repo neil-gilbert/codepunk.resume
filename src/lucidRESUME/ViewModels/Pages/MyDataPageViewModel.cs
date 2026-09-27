@@ -46,6 +46,7 @@ public sealed partial class MyDataPageViewModel : ViewModelBase
 
     // ── Experience ─────────────────────────────────────────────────────────
     [ObservableProperty] private ObservableCollection<WorkExperience> _experience = [];
+    [ObservableProperty] private ObservableCollection<CareerAnchorItemVm> _experienceItems = [];
     [ObservableProperty] private ObservableCollection<GanttBarVm> _ganttBars = [];
     [ObservableProperty] private string _ganttStartLabel = "";
     [ObservableProperty] private string _ganttEndLabel = "";
@@ -183,6 +184,8 @@ public sealed partial class MyDataPageViewModel : ViewModelBase
 
             // Experience, education, projects
             Experience = new ObservableCollection<WorkExperience>(_resume.Experience);
+            ExperienceItems = new ObservableCollection<CareerAnchorItemVm>(_resume.Experience.Select(experience =>
+                new CareerAnchorItemVm(experience, OnCareerAnchorChanged)));
             Education = new ObservableCollection<Education>(_resume.Education);
             Projects = new ObservableCollection<Project>(_resume.Projects);
             Issues = new ObservableCollection<ConsistencyIssue>(_ledger.Issues);
@@ -254,6 +257,22 @@ public sealed partial class MyDataPageViewModel : ViewModelBase
     {
         _overrides.DismissedSkills.Remove(skill.SkillName);
         ApplyFilters();
+        ScheduleSave();
+    }
+
+    private void OnCareerAnchorChanged(WorkExperience experience, bool isAnchor)
+    {
+        experience.IsCareerAnchor = isAnchor;
+        if (isAnchor)
+        {
+            _overrides.CareerAnchorExperienceIds.Add(experience.Id);
+            _overrides.CareerAnchorRoleKeys.Add(AppState.CareerAnchorRoleKey(experience));
+        }
+        else
+        {
+            _overrides.CareerAnchorExperienceIds.Remove(experience.Id);
+            _overrides.CareerAnchorRoleKeys.Remove(AppState.CareerAnchorRoleKey(experience));
+        }
         ScheduleSave();
     }
 

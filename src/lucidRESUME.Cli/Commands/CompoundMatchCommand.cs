@@ -34,7 +34,7 @@ public static class CompoundMatchCommand
             var jobText = result.GetValue(jobOpt)!;
             var config = result.GetValue(configOpt);
 
-            var sp = ServiceBootstrap.Build(config);
+            using var sp = ServiceBootstrap.Build(config);
             var parser = sp.GetRequiredService<IResumeParser>();
             var jdParser = sp.GetRequiredService<IJobSpecParser>();
             var ledgerBuilder = sp.GetRequiredService<SkillLedgerBuilder>();

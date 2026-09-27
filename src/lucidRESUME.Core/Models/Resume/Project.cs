@@ -11,4 +11,10 @@ public sealed class Project
 
     /// <summary>Import sources that contributed to this entry.</summary>
     public List<string> ImportSources { get; set; } = [];
+
+    /// <summary>
+    /// Structured, source-specific observations retained for full-resolution JobML.
+    /// These values support retrieval and audit; they are not human prose or claims.
+    /// </summary>
+    public Dictionary<string, string> EvidenceMetadata { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

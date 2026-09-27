@@ -122,6 +122,23 @@ public sealed class JobMlEntity
 
     [YamlMember(Alias = "source")]
     public string Source { get; set; } = "";
+
+    /// <summary>
+    /// Author-controlled publication preference. It affects projection selection but
+    /// is not evidence and does not strengthen any claim.
+    /// </summary>
+    [YamlMember(Alias = "projection")]
+    public JobMlProjectionPreference? Projection { get; set; }
+}
+
+public sealed class JobMlProjectionPreference
+{
+    /// <summary>Supported values in 0.1 are "always" and "relevant".</summary>
+    [YamlMember(Alias = "include")]
+    public string Include { get; set; } = "relevant";
+
+    [YamlMember(Alias = "reason")]
+    public string? Reason { get; set; }
 }
 
 public sealed class JobMlClaim

@@ -7,6 +7,29 @@ namespace lucidRESUME.Core.Tests.Parsing;
 public class MarkdownSectionParserTests
 {
     [Fact]
+    public void Career_anchor_directive_marks_role_without_becoming_achievement_text()
+    {
+        const string markdown = """
+            # Jane Smith
+
+            ## Experience
+
+            ### Program Manager II | Microsoft Corp
+            <!-- lucidresume:career-anchor -->
+            *Jan 2007 - Oct 2009*
+
+            - Shipped the first ASP.NET MVC release.
+            """;
+        var resume = ResumeDocument.Create("resume.md", "text/markdown", markdown.Length);
+
+        MarkdownSectionParser.PopulateSections(resume, markdown);
+
+        var role = Assert.Single(resume.Experience);
+        Assert.True(role.IsCareerAnchor);
+        Assert.Equal("Shipped the first ASP.NET MVC release.", Assert.Single(role.Achievements));
+    }
+
+    [Fact]
     public void PopulateSections_StopsEducationAtUnknownPeerHeading()
     {
         const string markdown = """

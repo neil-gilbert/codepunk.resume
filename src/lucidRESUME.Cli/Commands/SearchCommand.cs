@@ -43,7 +43,7 @@ public static class SearchCommand
             var output = result.GetValue(outputOpt);
             var config = result.GetValue(configOpt);
 
-            var sp = ServiceBootstrap.Build(config?.FullName);
+            using var sp = ServiceBootstrap.Build(config?.FullName);
             var searchService = sp.GetRequiredService<JobSearchService>();
 
             // If resume provided, generate search queries from skill communities

@@ -134,8 +134,17 @@ Every major job site wants your email, your browsing history, and permission to 
 - **DOCX preview** powered by [Morph](https://github.com/SimonCropp/Morph) — cross-platform document-to-image rendering in pure C#, no LibreOffice needed
 - **LinkedIn data export** — drop your LinkedIn ZIP archive and it auto-detects and imports your full profile: positions, skills (with endorsement counts), education, projects, contact info
 - **GitHub evidence** - imports Linguist language totals, topics, README-derived
-  candidates, project dates, and repository provenance. Observed technologies are
-  kept separate from reviewed personal claims.
+  candidates, project dates, and repository provenance. A bounded deep audit
+  records original/fork status, repository age, activity span, tests, CI, release
+  automation, package manifests, documentation, and browser-extension structure.
+  Archived and small repositories remain visible as historical or experimental
+  observations. Forks and repositories below the evidence threshold do not
+  nominate personal skills by default. Observed technologies remain separate
+  from reviewed personal claims.
+- **NuGet package families** - audits a public publisher profile and official V3
+  metadata, then groups package IDs by source product. Package count, public
+  downloads, tags, and source repositories become searchable ledger evidence,
+  not automatic résumé prose or claims of proficiency.
 - All imports merge into a **single unified candidate document** using embedding cosine similarity — no duplicates, full source tracking
 - Handles two-column, LaTeX, complex formatting
 - Template learning: learns your resume's structure on first parse, deterministic on subsequent imports
@@ -237,6 +246,7 @@ tables, sidebars, text boxes and repeated résumé headers.
 - [Chrome Evidence Filler](extensions/lucidresume-chrome/README.md) - local Prompt API field mapping from a published full JobML endpoint, with review and honest gaps.
 - [Chrome Evidence Filler Design](docs/chrome-evidence-filler.md) - researched browser APIs, deterministic projection rules, privacy, threat model, and verification.
 - [JobML GitHub Extension](docs/jobml-github-extension-0.1.md) - repository quality, attribution, and skill-observation model.
+- [JobML Package Registry Extension](docs/jobml-package-extension-0.1.md) - package-family discovery and registry observations.
 - [In-App User Manual](src/lucidRESUME/Resources/user-manual.md) - the same help content embedded in the desktop app.
 
 ### CLI
@@ -257,13 +267,14 @@ lucidresume anonymize      --resume cv.docx [--output anon.json]
 lucidresume rank           --dir resumes/ --job "JD text"
 lucidresume search         --prompt "senior .NET developer remote"
 lucidresume extract-jd     --job "JD text" [--output jd.json]
-lucidresume github-import  --username scottgal
+lucidresume github-import  --username scottgal --output repositories.json
+lucidresume package-audit  --publisher mostlylucid --output packages.json
 lucidresume batch-test     --dir resumes/
 lucidresume jobml validate  --file resume.jobml.md
 lucidresume jobml reconcile --file resume.jobml.md
 lucidresume jobml coverage  --file resume.jobml.md
 lucidresume jobml cold-parser-probe --file resume.jobml.md
-lucidresume jobml career-record --resume-dir /path/to/resumes --output career.jobml.md
+lucidresume jobml career-record --resume-dir /path/to/resumes --github scottgal --nuget-publisher mostlylucid --output career.jobml.md
 lucidresume jobml compact --file resume.jobml.md --full-jobml https://example.net/career.jobml --output resume.md
 lucidresume jobml link-post --file resume.jobml.md --claim claim-id --url https://example.net/article --output linked.jobml.md
 ```
@@ -274,6 +285,35 @@ human-only copy. `--full-jobml` gives transcript references an exact deep link.
 Compact references can cite transcript sections and public evidence without
 copying full passages, selectors, or drift hashes out of the full JobML career
 record.
+
+### Career anchors
+
+Relevance and recency should not erase a defining older role. Mark a role as
+**Always include** on the My Data page, or place an invisible directive directly
+below its Markdown heading:
+
+```markdown
+### Program Manager II | Microsoft Corp
+<!-- lucidresume:career-anchor -->
+```
+
+The full JobML `career_record` publishes this as
+`projection: { include: always }`. Compilers reserve anchor sections before
+ranking ordinary roles. The preference does not strengthen the role's claims or
+bypass evidence validation.
+
+CLI and server configurations may anchor every role for selected companies:
+
+```json
+{
+  "Tailoring": {
+    "CareerAnchorCompanies": ["Microsoft", "Dell"]
+  }
+}
+```
+
+Company anchoring is explicitly configured by the author. lucidRESUME does not
+maintain an inferred employer-prestige score.
 
 ---
 
@@ -397,21 +437,21 @@ lucidRESUME (Avalonia UI: My CV, JobML Editor, My Data, Career, Jobs, Add Job, P
 ## Tests
 
 ```bash
-dotnet test lucidRESUME.sln    # 388 tests across 12 projects
+dotnet test lucidRESUME.sln    # 434 tests across 12 projects
 ```
 
 | Project | Tests | Coverage |
 |---------|-------|----------|
-| Core.Tests | 77 | Persistence, models, multi-resume, export, linked posts |
-| Extraction.Tests | 24 | NER, recognizers, RRF fusion pipeline |
-| AI.Tests | 34 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
+| Core.Tests | 90 | Persistence, models, multi-resume, export, linked posts |
+| Extraction.Tests | 25 | NER, recognizers, RRF fusion pipeline |
+| AI.Tests | 44 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
 | Matching.Tests | 58 | Skill scoring, filters, voting, projection quality |
-| JobSpec.Tests | 8 | JD parsing, salary extraction |
+| JobSpec.Tests | 15 | JD parsing, salary extraction |
 | EmailTracker.Tests | 25 | Classifier, matcher |
-| GitHub.Tests | 26 | Language map, LinkedIn parser, document merger |
-| JobML.Tests | 27 | Parsing, validation, drift, reversible links, cJobML projection |
-| Compiler.Tests | 6 | Deterministic evidence selection and projection orchestration |
-| Web.Tests | 3 | ASP.NET Core endpoint and projection control |
+| GitHub.Tests | 34 | Language map, repository assessment, package families, LinkedIn parsing, document merge |
+| JobML.Tests | 29 | Parsing, validation, drift, reversible links, cJobML projection |
+| Compiler.Tests | 9 | Deterministic evidence selection and projection orchestration |
+| Web.Tests | 5 | ASP.NET Core endpoint and projection control |
 | App.Tests | 2 | Native operating-system credential storage |
 | Avalonia.UITesting.Tests | 98 | Input, scripts, locators, screenshots, REPL |
 

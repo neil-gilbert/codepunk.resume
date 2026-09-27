@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using lucidRESUME.AI;
 using lucidRESUME.Core.Models.Profile;
+using lucidRESUME.Core.Models.Resume;
 using lucidRESUME.Core.Persistence;
 using lucidRESUME.GitHub;
 using lucidRESUME.Services;
@@ -18,6 +19,7 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
     private readonly AiSettingsPath _aiSettingsPath;
     private readonly ISecretStore _secretStore;
     private readonly GitHubSkillImporter _gitHubImporter;
+    private readonly NuGetPackageAuditService _nuGetPackageAudit;
     private readonly LlamaSharpModelManager _llamaSharpModels;
     private CancellationTokenSource? _saveCts;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
@@ -88,6 +90,9 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
     [ObservableProperty] private string _gitHubUsername = "";
     [ObservableProperty] private bool _isImportingGitHub;
     [ObservableProperty] private string? _gitHubImportStatus;
+    [ObservableProperty] private string _nuGetPublisher = "";
+    [ObservableProperty] private bool _isImportingNuGet;
+    [ObservableProperty] private string? _nuGetImportStatus;
 
     public ProfilePageViewModel(
         IAppStore store,
@@ -95,6 +100,7 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
         AiSettingsPath aiSettingsPath,
         ISecretStore secretStore,
         GitHubSkillImporter gitHubImporter,
+        NuGetPackageAuditService nuGetPackageAudit,
         LlamaSharpModelManager llamaSharpModels)
     {
         _store = store;
@@ -102,6 +108,7 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
         _aiSettingsPath = aiSettingsPath;
         _secretStore = secretStore;
         _gitHubImporter = gitHubImporter;
+        _nuGetPackageAudit = nuGetPackageAudit;
         _llamaSharpModels = llamaSharpModels;
 
         SubscribeCollections();
@@ -262,10 +269,7 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
                 var resume = state.SelectedResume ?? Core.Models.Resume.ResumeDocument.Create(
                     "profile-enrichment", "application/vnd.lucidresume.profile", 0);
 
-                // Add GitHub projects that aren't already present
-                var existingUrls = resume.Projects.Select(p => p.Url).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                foreach (var project in result.Projects.Where(p => !existingUrls.Contains(p.Url)))
-                    resume.Projects.Add(project);
+                ProjectEvidenceMerger.MergeAuditObservations(resume, result.Projects);
 
                 // Enrich PersonalInfo from GitHub profile
                 if (result.Profile is { } profile)
@@ -280,8 +284,10 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
 
             var skillCount = result.SkillEntries.Count;
             var repoCount = result.ReposAnalysed;
-            var projectCount = result.Projects.Count;
-            GitHubImportStatus = $"Imported {skillCount} skills from {repoCount} repos, {projectCount} projects added";
+            var eligibleCount = result.ProjectProfiles.Count(profile => profile.EligibleForPersonalEvidence);
+            var observationOnly = repoCount - eligibleCount;
+            var deeplyInspected = result.ProjectProfiles.Count(profile => profile.Engineering.TreeObserved);
+            GitHubImportStatus = $"Audited {repoCount} repos ({eligibleCount} eligible, {observationOnly} observation-only, {deeplyInspected} deeply inspected); refreshed {skillCount} skill candidates";
 
             if (result.Warnings.Count > 0)
                 GitHubImportStatus += $" ({result.Warnings.Count} warnings)";
@@ -297,6 +303,34 @@ public sealed partial class ProfilePageViewModel : ViewModelBase
         finally
         {
             IsImportingGitHub = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ImportNuGet()
+    {
+        if (string.IsNullOrWhiteSpace(NuGetPublisher)) return;
+        IsImportingNuGet = true;
+        NuGetImportStatus = "Auditing public packages...";
+        try
+        {
+            var result = await _nuGetPackageAudit.AuditAsync(NuGetPublisher.Trim());
+            await _store.MutateAsync(state =>
+            {
+                var resume = state.SelectedResume ?? Core.Models.Resume.ResumeDocument.Create(
+                    "profile-enrichment", "application/vnd.lucidresume.profile", 0);
+                ProjectEvidenceMerger.MergeAuditObservations(resume, result.Projects);
+                state.AddOrReplaceResume(resume, select: true);
+            });
+            NuGetImportStatus = $"Imported {result.PackageCount} packages as {result.Families.Count} searchable product families ({result.TotalDownloads:N0} registry downloads observed)";
+        }
+        catch (Exception ex)
+        {
+            NuGetImportStatus = $"Package audit failed: {ex.Message}";
+        }
+        finally
+        {
+            IsImportingNuGet = false;
         }
     }
 

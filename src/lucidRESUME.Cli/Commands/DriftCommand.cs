@@ -29,7 +29,7 @@ public static class DriftCommand
             var file2 = result.GetValue(resume2Opt)!;
             var config = result.GetValue(configOpt);
 
-            var sp = ServiceBootstrap.Build(config?.FullName);
+            using var sp = ServiceBootstrap.Build(config?.FullName);
             var parser = sp.GetRequiredService<IResumeParser>();
             var ledgerBuilder = sp.GetRequiredService<SkillLedgerBuilder>();
 

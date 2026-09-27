@@ -9,6 +9,14 @@ public sealed class WorkExperience
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public bool IsCurrent { get; set; }
+
+    /// <summary>
+    /// Author-controlled publication preference. Career anchors are retained in every
+    /// role-specific resume projection even when age or lexical similarity would
+    /// otherwise push them outside the detailed-role budget.
+    /// </summary>
+    public bool IsCareerAnchor { get; set; }
+
     public List<string> Achievements { get; set; } = [];
     public List<string> Technologies { get; set; } = [];
 

@@ -57,7 +57,7 @@ public static class RankCommand
                 return;
             }
 
-            var sp = ServiceBootstrap.Build(config?.FullName);
+            using var sp = ServiceBootstrap.Build(config?.FullName);
             var parser = sp.GetRequiredService<IResumeParser>();
             var jobParser = sp.GetRequiredService<IJobSpecParser>();
             var ledgerBuilder = sp.GetRequiredService<SkillLedgerBuilder>();

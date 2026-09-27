@@ -1,5 +1,6 @@
 using lucidRESUME.Core.Models.Resume;
 using lucidRESUME.Core.Models.Skills;
+using lucidRESUME.Core.Models.Evidence;
 using lucidRESUME.GitHub.Models;
 using lucidRESUME.Matching;
 using Microsoft.Extensions.Logging;
@@ -49,12 +50,18 @@ public sealed class GitHubSkillImporter
         // Fetch repos
         var allRepos = await _client.GetUserReposAsync(username, ct);
         var skipped = 0;
+        var deeplyAnalysed = 0;
+        var readmesAnalysed = 0;
 
-        foreach (var repo in allRepos)
+        var observedAt = DateTimeOffset.UtcNow;
+        foreach (var repo in allRepos
+                     .OrderBy(repo => repo.Fork)
+                     .ThenBy(repo => repo.Archived)
+                     .ThenByDescending(repo => repo.PushedAt))
         {
-            if (repo.Fork && !_options.IncludeForks) { skipped++; continue; }
-            if (repo.Size < _options.MinRepoSizeKb) { skipped++; continue; }
-            if (repo.Archived) { skipped++; continue; }
+            var meetsEvidenceThreshold = repo.Size >= _options.MinRepoSizeKb;
+            var mayUseAsPersonalEvidence = meetsEvidenceThreshold && (!repo.Fork || _options.IncludeForks);
+            if (!mayUseAsPersonalEvidence) skipped++;
 
             // Check rate budget: need 2 calls per repo (languages + readme)
             Dictionary<string, long>? languages = null;
@@ -74,7 +81,7 @@ public sealed class GitHubSkillImporter
             }
 
             // Extract skills from languages
-            if (languages is { Count: > 0 })
+            if (mayUseAsPersonalEvidence && languages is { Count: > 0 })
             {
                 var totalBytes = languages.Values.Sum();
                 foreach (var (lang, bytes) in languages)
@@ -97,7 +104,7 @@ public sealed class GitHubSkillImporter
             }
 
             // Extract skills from topics
-            foreach (var topic in repo.Topics)
+            foreach (var topic in mayUseAsPersonalEvidence ? repo.Topics : [])
             {
                 var canonical = SkillTaxonomy.Canonicalize(topic) ?? topic.ToLowerInvariant();
                 var entry = GetOrCreate(skillMap, canonical);
@@ -118,38 +125,61 @@ public sealed class GitHubSkillImporter
             // Extract skills from README via lucidRAG DocSummarizer
             string? readme = null;
             ReadmeExtractionResult? readmeResult = null;
-            try
+            if (readmesAnalysed < Math.Max(0, _options.ReadmeAnalysisMaxRepositories))
             {
-                readme = await _client.GetRepoReadmeAsync(username, repo.Name, ct);
-                if (readme is { Length: > 100 })
+                try
                 {
-                    readmeResult = await _readmeExtractor.ExtractAsync(readme, repo.Name, ct);
-                    foreach (var (skill, confidence) in readmeResult.Skills)
+                    readmesAnalysed++;
+                    readme = await _client.GetRepoReadmeAsync(username, repo.Name, ct);
+                    if (readme is { Length: > 100 })
                     {
-                        var entry = GetOrCreate(skillMap, skill);
-                        if (!entry.Evidence.Any(e => e.Company == repo.Name && e.SourceText.Contains("README")))
+                        readmeResult = await _readmeExtractor.ExtractAsync(readme, repo.Name, ct);
+                        foreach (var (skill, confidence) in mayUseAsPersonalEvidence ? readmeResult.Skills : [])
                         {
-                            entry.Evidence.Add(new SkillEvidence
+                            var entry = GetOrCreate(skillMap, skill);
+                            if (!entry.Evidence.Any(e => e.Company == repo.Name && e.SourceText.Contains("README")))
                             {
-                                Company = repo.Name,
-                                SourceText = $"README of {repo.Name}",
-                                StartDate = DateOnly.FromDateTime(repo.CreatedAt.DateTime),
-                                EndDate = DateOnly.FromDateTime(repo.PushedAt.DateTime),
-                                Source = EvidenceSource.GitHubRepository,
-                                Confidence = confidence,
-                            });
+                                entry.Evidence.Add(new SkillEvidence
+                                {
+                                    Company = repo.Name,
+                                    SourceText = $"README of {repo.Name}",
+                                    StartDate = DateOnly.FromDateTime(repo.CreatedAt.DateTime),
+                                    EndDate = DateOnly.FromDateTime(repo.PushedAt.DateTime),
+                                    Source = EvidenceSource.GitHubRepository,
+                                    Confidence = confidence,
+                                });
+                            }
                         }
                     }
                 }
+                catch (GitHubRateLimitException ex)
+                {
+                    warnings.Add($"Rate limited fetching README for '{repo.Name}'. Resets at {ex.ResetsAt:HH:mm UTC}.");
+                    // Continue to next repo: languages and metadata remain useful.
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to process README for {Repo}", repo.Name);
+                }
             }
-            catch (GitHubRateLimitException ex)
+
+            GitHubTree? tree = null;
+            if (deeplyAnalysed < Math.Max(0, _options.DeepAnalysisMaxRepositories))
             {
-                warnings.Add($"Rate limited fetching README for '{repo.Name}'. Resets at {ex.ResetsAt:HH:mm UTC}.");
-                // Continue to next repo — we already got languages
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Failed to process README for {Repo}", repo.Name);
+                try
+                {
+                    _client.EnsureBudget();
+                    tree = await _client.GetRepoTreeAsync(username, repo.Name, repo.DefaultBranch, ct);
+                    deeplyAnalysed++;
+                }
+                catch (GitHubRateLimitException ex)
+                {
+                    warnings.Add($"Rate limited during deep repository analysis at '{repo.Name}'. Resets at {ex.ResetsAt:HH:mm UTC}.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to inspect repository tree for {Repo}", repo.Name);
+                }
             }
 
             // Build Project entry
@@ -167,15 +197,6 @@ public sealed class GitHubSkillImporter
             }
 
             var distinctTechs = technologies.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-
-            projects.Add(new Project
-            {
-                Name = repo.Name,
-                Description = description,
-                Technologies = distinctTechs,
-                Url = repo.HtmlUrl,
-                Date = DateOnly.FromDateTime(repo.PushedAt.DateTime),
-            });
 
             // Build per-project profile
             var languageWeights = new List<LanguageWeight>();
@@ -196,15 +217,29 @@ public sealed class GitHubSkillImporter
 
             var readmeSkillNames = readmeResult?.Skills.Select(s => s.Skill).ToList() ?? [];
 
-            profiles.Add(new GitHubProjectProfile
+            var (engineering, assessment, classification) = RepositoryAssessmentService.Assess(
+                repo, tree, readme is { Length: > 100 }, repoSkills.Count, observedAt);
+            var projectProfile = new GitHubProjectProfile
             {
                 Name = repo.Name,
                 Description = description,
                 Summary = readmeResult?.Summary,
                 Url = repo.HtmlUrl,
                 Stars = repo.StargazersCount,
+                Forks = repo.ForksCount,
+                OpenIssues = repo.OpenIssuesCount,
                 SizeKb = repo.Size,
                 IsFork = repo.Fork,
+                IsArchived = repo.Archived,
+                EligibleForPersonalEvidence = mayUseAsPersonalEvidence,
+                ObservedAt = observedAt,
+                RepositoryClass = classification,
+                Revision = tree?.Sha,
+                TreeTruncated = tree?.Truncated == true,
+                FileCount = tree?.Entries.Count(entry => entry.Type == "blob") ?? 0,
+                LicenseSpdx = repo.License?.SpdxId,
+                Engineering = engineering,
+                Assessment = assessment,
                 Created = DateOnly.FromDateTime(repo.CreatedAt.DateTime),
                 LastActive = DateOnly.FromDateTime(repo.PushedAt.DateTime),
                 PrimaryLanguage = repo.Language,
@@ -212,7 +247,26 @@ public sealed class GitHubSkillImporter
                 Topics = repo.Topics.ToList(),
                 Skills = repoSkills,
                 ReadmeSkills = readmeSkillNames,
-                EvidenceStrength = ComputeRepoStrength(repo, languageWeights.Count, repoSkills.Count),
+                EvidenceStrength = assessment.EvidenceStrength,
+            };
+            profiles.Add(projectProfile);
+
+            // Repository observations become searchable project evidence. They are not
+            // selected into a short resume unless the target role matches their content.
+            var auditSummary = RepositoryAssessmentService.SearchableSummary(projectProfile);
+            var metadata = RepositoryMetadata(projectProfile);
+            metadata["eligible_for_personal_evidence"] = projectProfile.EligibleForPersonalEvidence.ToString().ToLowerInvariant();
+            projects.Add(new Project
+            {
+                Id = EvidenceLedgerBuilder.StableGuid($"github:{repo.HtmlUrl}"),
+                Name = repo.Name,
+                Description = string.Join(' ', new[] { description, auditSummary }
+                    .Where(value => !string.IsNullOrWhiteSpace(value))),
+                Technologies = distinctTechs,
+                Url = repo.HtmlUrl,
+                Date = DateOnly.FromDateTime(repo.PushedAt.DateTime),
+                ImportSources = ["GitHub repository audit"],
+                EvidenceMetadata = metadata
             });
         }
 
@@ -230,7 +284,7 @@ public sealed class GitHubSkillImporter
         return new GitHubImportResult
         {
             Username = username,
-            ReposAnalysed = allRepos.Count - skipped,
+            ReposAnalysed = profiles.Count,
             ProjectProfiles = profiles.OrderByDescending(p => p.EvidenceStrength).ToList(),
             ReposSkipped = skipped,
             SkillEntries = entries,
@@ -240,6 +294,41 @@ public sealed class GitHubSkillImporter
         };
     }
 
+    private static Dictionary<string, string> RepositoryMetadata(GitHubProjectProfile profile) =>
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["provider"] = "github",
+            ["repository_class"] = profile.RepositoryClass,
+            ["fork"] = profile.IsFork.ToString().ToLowerInvariant(),
+            ["archived"] = profile.IsArchived.ToString().ToLowerInvariant(),
+            ["observed_at"] = profile.ObservedAt.ToString("O"),
+            ["revision"] = profile.Revision ?? "unknown",
+            ["created"] = profile.Created.ToString("yyyy-MM-dd"),
+            ["last_active"] = profile.LastActive.ToString("yyyy-MM-dd"),
+            ["repository_age_years"] = profile.AgeYears.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            ["active_span_years"] = profile.ActiveYears.ToString("F2", System.Globalization.CultureInfo.InvariantCulture),
+            ["tree_truncated"] = profile.TreeTruncated.ToString().ToLowerInvariant(),
+            ["file_count"] = profile.FileCount.ToString(),
+            ["stars"] = profile.Stars.ToString(),
+            ["forks"] = profile.Forks.ToString(),
+            ["license_spdx"] = profile.LicenseSpdx ?? "unknown",
+            ["assessment_method"] = profile.Assessment.Method,
+            ["assessment_version"] = profile.Assessment.MethodVersion,
+            ["evidence_strength"] = profile.Assessment.EvidenceStrength.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            ["originality"] = profile.Assessment.Originality.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            ["longevity"] = profile.Assessment.Longevity.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            ["engineering_process"] = profile.Assessment.EngineeringProcess.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            ["documentation"] = profile.Assessment.Documentation.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            ["delivery"] = profile.Assessment.Delivery.ToString("F4", System.Globalization.CultureInfo.InvariantCulture),
+            ["has_tests"] = profile.Engineering.HasTests.ToString().ToLowerInvariant(),
+            ["tree_observed"] = profile.Engineering.TreeObserved.ToString().ToLowerInvariant(),
+            ["has_ci"] = profile.Engineering.HasCi.ToString().ToLowerInvariant(),
+            ["has_release_automation"] = profile.Engineering.HasReleaseAutomation.ToString().ToLowerInvariant(),
+            ["has_package_manifests"] = profile.Engineering.HasPackageManifests.ToString().ToLowerInvariant(),
+            ["has_documentation"] = profile.Engineering.HasDocumentation.ToString().ToLowerInvariant(),
+            ["has_browser_extension"] = profile.Engineering.HasBrowserExtension.ToString().ToLowerInvariant()
+        };
+
     private static SkillLedgerEntry GetOrCreate(Dictionary<string, SkillLedgerEntry> map, string skillName)
     {
         if (!map.TryGetValue(skillName, out var entry))
@@ -248,17 +337,6 @@ public sealed class GitHubSkillImporter
             map[skillName] = entry;
         }
         return entry;
-    }
-
-    private static double ComputeRepoStrength(GitHubRepo repo, int languageCount, int skillCount)
-    {
-        var sizeFactor = Math.Min(repo.Size / 10_000.0, 1.0);
-        var skillFactor = Math.Min(skillCount / 10.0, 1.0);
-        var starFactor = Math.Min(repo.StargazersCount / 20.0, 1.0);
-        var daysSincePush = (DateTimeOffset.UtcNow - repo.PushedAt).TotalDays;
-        var recencyFactor = daysSincePush < 365 ? 1.0 : daysSincePush < 730 ? 0.7 : 0.4;
-
-        return (sizeFactor * 0.25 + skillFactor * 0.3 + starFactor * 0.2 + recencyFactor * 0.25);
     }
 
     private static double ComputeConfidence(double languageFraction, GitHubRepo repo)

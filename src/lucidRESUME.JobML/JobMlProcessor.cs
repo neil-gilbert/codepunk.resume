@@ -84,6 +84,9 @@ public sealed class JobMlProcessor
                 diagnostics.Add(Error("JML010", "An entity requires id, type, and name.", $"entities[{i}]"));
             if (string.IsNullOrWhiteSpace(entity.Source) || !HasSource(index, entity.Source))
                 diagnostics.Add(Warning("JML011", $"Entity source '{entity.Source}' does not resolve to prose.", $"entities[{i}].source"));
+            if (entity.Projection is not null && entity.Projection.Include is not ("always" or "relevant"))
+                diagnostics.Add(Error("JML041", "Entity projection.include must be always or relevant.",
+                    $"entities[{i}].projection.include"));
         }
 
         var reconciled = Reconcile(file);

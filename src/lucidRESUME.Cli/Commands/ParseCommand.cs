@@ -49,7 +49,7 @@ public static class ParseCommand
                 return;
             }
 
-            var services = ServiceBootstrap.Build(config?.FullName);
+            using var services = ServiceBootstrap.Build(config?.FullName);
             var resume = await ResumeInputHelper.LoadAsync(services, file, directory, ct);
 
             // Categorise skills using taxonomy detection

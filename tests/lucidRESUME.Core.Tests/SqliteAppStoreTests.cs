@@ -24,6 +24,39 @@ public class SqliteAppStoreTests : IDisposable
     }
 
     [Fact]
+    public void Aggregate_applies_company_and_stable_role_career_anchors()
+    {
+        var microsoft = new WorkExperience
+        {
+            Company = "Microsoft Corp",
+            Title = "Program Manager II",
+            Achievements = ["Released ASP.NET MVC."]
+        };
+        var dell = new WorkExperience
+        {
+            Company = "Dell Ltd",
+            Title = "Development Lead",
+            Achievements = ["Led platform development."]
+        };
+        var resume = ResumeDocument.Create("resume.md", "text/markdown", 0);
+        resume.Experience = [microsoft, dell];
+        var state = new AppState
+        {
+            Resumes = [resume],
+            Overrides = new UserOverrides
+            {
+                CareerAnchorCompanies = ["Microsoft"],
+                CareerAnchorRoleKeys = ["dell|development lead"]
+            }
+        };
+
+        var aggregate = state.BuildAggregateResume();
+
+        Assert.NotNull(aggregate);
+        Assert.All(aggregate.Experience, experience => Assert.True(experience.IsCareerAnchor));
+    }
+
+    [Fact]
     public async Task LoadAsync_EmptyDb_ReturnsDefaultState()
     {
         var state = await _store.LoadAsync();
@@ -88,7 +121,10 @@ public class SqliteAppStoreTests : IDisposable
             {
                 DismissedSkills = ["COBOL"],
                 PersonalInfoOverrides = new Dictionary<string, string> { ["FullName"] = "Correct Name" },
-                ManualSkills = [new ManualSkillEntry { SkillName = "Rust", Category = "Languages" }]
+                ManualSkills = [new ManualSkillEntry { SkillName = "Rust", Category = "Languages" }],
+                CareerAnchorCompanies = ["Microsoft"],
+                CareerAnchorExperienceIds = [Guid.Parse("11111111-1111-1111-1111-111111111111")],
+                CareerAnchorRoleKeys = ["dell|development lead"]
             },
             EmployerProfile = new EmployerProfile
             {
@@ -104,6 +140,10 @@ public class SqliteAppStoreTests : IDisposable
         Assert.Contains("COBOL", loaded.Overrides.DismissedSkills);
         Assert.Equal("Correct Name", loaded.Overrides.PersonalInfoOverrides["FullName"]);
         Assert.Equal("Rust", Assert.Single(loaded.Overrides.ManualSkills).SkillName);
+        Assert.Contains("Microsoft", loaded.Overrides.CareerAnchorCompanies);
+        Assert.Contains(Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            loaded.Overrides.CareerAnchorExperienceIds);
+        Assert.Contains("dell|development lead", loaded.Overrides.CareerAnchorRoleKeys);
         Assert.Equal("Example Ltd", loaded.EmployerProfile?.CompanyName);
         Assert.Equal(CompanySizeRange.Medium, loaded.EmployerProfile?.CompanySize);
     }

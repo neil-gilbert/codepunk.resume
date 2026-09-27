@@ -66,7 +66,12 @@ public sealed class JobMlResumeCompiler(
                         direct ? MatchKind.Direct : MatchKind.Related, score, reason));
             }
 
-        var selected = SelectClaims(candidates, matches, reconciled, entities, index, options);
+        var careerAnchorSubjects = entities.Values
+            .Where(IsCareerAnchor)
+            .Select(entity => entity.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selected = SelectClaims(candidates, matches, reconciled, entities, index, options,
+            careerAnchorSubjects);
         var sections = selected.GroupBy(x => x.Claim.Subject, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(group => group.Any(item => item.Claim.Type == "summary"))
             .ThenByDescending(group => group.Max(item => item.Score))
@@ -171,14 +176,48 @@ public sealed class JobMlResumeCompiler(
         IReadOnlyList<JobMlClaim> candidates, IReadOnlyList<ClaimMatch> matches,
         IReadOnlyDictionary<string, ClaimEvidenceResolution> reconciled,
         IReadOnlyDictionary<string, JobMlEntity> entities, MarkdownEvidenceIndex index,
-        CompilationOptions options)
+        CompilationOptions options, IReadOnlySet<string>? careerAnchorSubjects = null)
     {
         var result = new List<SelectedClaim>();
         var coveredRequirements = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Reserve one concise, human-authored passage for each author-selected career
+        // anchor before relevance ranking consumes the section budget.
+        foreach (var subject in careerAnchorSubjects ?? new HashSet<string>())
+        {
+            var anchored = candidates
+                .Where(claim => claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase))
+                .Select(claim => new
+                {
+                    Claim = claim,
+                    Matches = matches.Where(match =>
+                        match.ClaimId.Equals(claim.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                    Prose = ResolveProse(claim, reconciled, index)
+                })
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Prose))
+                .OrderByDescending(candidate => CareerAnchorClaimSignal(candidate.Claim.Statement))
+                .ThenByDescending(candidate => candidate.Matches.Select(match => match.Score).DefaultIfEmpty(0).Max())
+                .ThenByDescending(candidate => candidate.Claim.Type == "achievement")
+                .FirstOrDefault();
+            if (anchored is null) continue;
+            result.Add(new SelectedClaim(anchored.Claim,
+                entities.GetValueOrDefault(anchored.Claim.Subject)?.Name ?? anchored.Claim.Subject,
+                anchored.Prose!,
+                anchored.Claim.Evidence.Select((e, i) => e.Id ?? $"{anchored.Claim.Id}-e{i + 1}").ToList(),
+                anchored.Matches.Select(match => match.Score).DefaultIfEmpty(.5).Max(), anchored.Matches));
+            foreach (var requirement in anchored.Matches.Select(match => match.RequirementId))
+                coveredRequirements.Add(requirement);
+        }
+
         var pending = candidates
             .Select(c => (Claim: c, Matches: matches.Where(m => m.ClaimId.Equals(c.Id, StringComparison.OrdinalIgnoreCase)).ToList()))
-            .Where(x => x.Matches.Count > 0).ToList();
-        while (pending.Count > 0 && result.Count < options.MaximumClaims)
+            .Where(x => x.Matches.Count > 0)
+            // Anchors already have their one defining passage. Keep them compact and
+            // leave the ordinary claim and section budgets to role-specific evidence.
+            .Where(x => careerAnchorSubjects?.Contains(x.Claim.Subject) != true)
+            .Where(x => result.All(selected => !selected.Claim.Id.Equals(x.Claim.Id, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        while (pending.Count > 0 && NonAnchorClaimCount(result, careerAnchorSubjects) < options.MaximumClaims)
         {
             var claim = pending.OrderByDescending(x =>
             {
@@ -190,15 +229,14 @@ public sealed class JobMlResumeCompiler(
             pending.Remove(claim);
             var isNewSubject = result.All(existing =>
                 !existing.Claim.Subject.Equals(claim.Claim.Subject, StringComparison.OrdinalIgnoreCase));
-            if (isNewSubject && result.Select(existing => existing.Claim.Subject)
+            if (isNewSubject && result
+                    .Where(existing => careerAnchorSubjects?.Contains(existing.Claim.Subject) != true)
+                    .Select(existing => existing.Claim.Subject)
                     .Distinct(StringComparer.OrdinalIgnoreCase).Count() >= options.MaximumSections)
                 continue;
             if (result.Count(x => x.Claim.Subject.Equals(claim.Claim.Subject, StringComparison.OrdinalIgnoreCase)) >=
                 options.MaximumClaimsPerSubject) continue;
-            var prose = reconciled[claim.Claim.Id].Evidence
-                .Where(x => x.State == EvidenceState.Valid && IsProse(x.Evidence))
-                .Select(x => x.CurrentText ?? (x.Evidence.Ref is not null && index.TryGet(x.Evidence.Ref, out var p) ? p.Text : null))
-                .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+            var prose = ResolveProse(claim.Claim, reconciled, index);
             // A role-specific resume is never bootstrapped from an LLM or the advert.
             if (string.IsNullOrWhiteSpace(prose)) continue;
             // Imports commonly contain lightly rewritten copies of the same bullet.
@@ -217,6 +255,36 @@ public sealed class JobMlResumeCompiler(
         }
         return result;
     }
+
+    private static int NonAnchorClaimCount(
+        IEnumerable<SelectedClaim> selected,
+        IReadOnlySet<string>? careerAnchorSubjects) => selected.Count(item =>
+        careerAnchorSubjects?.Contains(item.Claim.Subject) != true);
+
+    private static string? ResolveProse(JobMlClaim claim,
+        IReadOnlyDictionary<string, ClaimEvidenceResolution> reconciled, MarkdownEvidenceIndex index) =>
+        reconciled.GetValueOrDefault(claim.Id)?.Evidence
+            .Where(x => x.State == EvidenceState.Valid && IsProse(x.Evidence))
+            .Select(x => x.CurrentText ??
+                         (x.Evidence.Ref is not null && index.TryGet(x.Evidence.Ref, out var passage)
+                             ? passage.Text
+                             : null))
+            .FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+
+    private static int CareerAnchorClaimSignal(string statement)
+    {
+        var score = 0;
+        if (statement.Contains("first release", StringComparison.OrdinalIgnoreCase) ||
+            statement.Contains("public production release", StringComparison.OrdinalIgnoreCase)) score += 10;
+        if (statement.Contains("led", StringComparison.OrdinalIgnoreCase) ||
+            statement.Contains("owned", StringComparison.OrdinalIgnoreCase)) score += 3;
+        if (statement.Contains("architect", StringComparison.OrdinalIgnoreCase) ||
+            statement.Contains("built", StringComparison.OrdinalIgnoreCase)) score += 2;
+        return score;
+    }
+
+    private static bool IsCareerAnchor(JobMlEntity entity) =>
+        string.Equals(entity.Projection?.Include, "always", StringComparison.OrdinalIgnoreCase);
 
     private static JobMlFile BuildProjection(JobMlFile source, string human,
         IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<SelectedClaim> selected, string? fullJobMlUri)
@@ -284,7 +352,17 @@ public sealed class JobMlResumeCompiler(
                 FullJobMl = effectiveFullJobMl?.ToString()
             },
             Entities = source.Data.Entities.Where(x => entityIds.Contains(x.Id)).Select(x => new JobMlEntity
-            { Id = x.Id, Name = x.Name, Type = x.Type, Source = $"#{blocks.First(b => b.ClaimIds.Any(id => selectedById.GetValueOrDefault(id)?.Claim.Subject.Equals(x.Id, StringComparison.OrdinalIgnoreCase) == true)).SectionId}" }).ToList(),
+            {
+                Id = x.Id,
+                Name = x.Name,
+                Type = x.Type,
+                Source = $"#{blocks.First(b => b.ClaimIds.Any(id => selectedById.GetValueOrDefault(id)?.Claim.Subject.Equals(x.Id, StringComparison.OrdinalIgnoreCase) == true)).SectionId}",
+                Projection = x.Projection is null ? null : new JobMlProjectionPreference
+                {
+                    Include = x.Projection.Include,
+                    Reason = x.Projection.Reason
+                }
+            }).ToList(),
             Claims = claims,
             Concepts = source.Data.Concepts.Where(x => conceptIds.Contains(x.Id)).Select(x => new JobMlConcept
             {

@@ -22,6 +22,12 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
         }).AddStandardResilienceHandler();
 
+        services.AddHttpClient<NuGetPackageAuditService>(client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("lucidRESUME", "1.0"));
+            client.Timeout = TimeSpan.FromSeconds(30);
+        }).AddStandardResilienceHandler();
+
         // Register lucidRAG DocSummarizer for README analysis (BERT mode, no LLM needed)
         services.AddDocSummarizer();
 

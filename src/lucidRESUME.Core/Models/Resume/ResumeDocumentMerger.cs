@@ -300,6 +300,8 @@ public sealed class ResumeDocumentMerger
                 foreach (var tech in proj.Technologies)
                     if (!existing.Technologies.Contains(tech, StringComparer.OrdinalIgnoreCase))
                         existing.Technologies.Add(tech);
+                foreach (var (key, value) in proj.EvidenceMetadata)
+                    existing.EvidenceMetadata[key] = value;
             }
             else
             {
@@ -602,6 +604,7 @@ public sealed class ResumeDocumentMerger
              incoming.StartDate < target.StartDate)))
             target.StartDate = incoming.StartDate;
         if (incoming.IsCurrent) target.IsCurrent = true;
+        target.IsCareerAnchor |= incoming.IsCareerAnchor;
         if (!target.IsCurrent && incoming.EndDate.HasValue && (target.EndDate is null ||
             (Math.Abs(incoming.EndDate.Value.DayNumber - target.EndDate.Value.DayNumber) <= DateOverlapGraceDays &&
              incoming.EndDate > target.EndDate)))

@@ -16,6 +16,9 @@ namespace lucidRESUME.Ingestion.Parsing;
 /// </summary>
 public static partial class MarkdownSectionParser
 {
+    private static readonly Regex CareerAnchorDirectivePattern = new(
+        @"^<!--\s*lucidresume\s*:\s*career-anchor\s*-->$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex StableAnchorPattern = new(@"\s*\{#[A-Za-z][A-Za-z0-9_.-]*\}\s*$", RegexOptions.Compiled);
     private static readonly Regex CompactMarkdownCitationPattern = new(@"\s*\[\[\d+\]\]\(#ref-\d+\)", RegexOptions.Compiled);
     private static readonly Regex CompactPlainCitationPattern = new(@"\s*\[\d+\]", RegexOptions.Compiled);
@@ -829,6 +832,14 @@ public static partial class MarkdownSectionParser
             }
 
             if (current == null) continue;
+
+            // Invisible authoring directive used by complete career transcripts.
+            // It is a projection preference only and is never treated as evidence prose.
+            if (CareerAnchorDirectivePattern.IsMatch(line))
+            {
+                current.IsCareerAnchor = true;
+                continue;
+            }
 
             if (string.IsNullOrWhiteSpace(current.Title) && line.Length <= 100 && LooksLikeJobTitle(line))
             {

@@ -216,10 +216,12 @@ GitHub API observations
     -> human-reviewed JobML claims
 ```
 
-The current importer reads repository metadata, Linguist language byte totals,
-topics, README content, and dates. README extraction uses lucidRAG BERT summaries
-plus the shared skill taxonomy. The output contributes candidate ledger evidence
-and project profiles.
+The importer reads repository metadata, Linguist language byte totals, topics,
+README content, and dates. For a bounded number of repositories it also inspects
+a revision-pinned recursive tree for tests, workflows, release automation,
+package manifests, documentation, and browser-extension structure. README
+extraction uses lucidRAG BERT summaries plus the shared skill taxonomy. The
+output contributes candidate ledger evidence and searchable project profiles.
 
 These signals are not interchangeable:
 
@@ -233,9 +235,37 @@ These signals are not interchangeable:
 | Stars and forks | Popularity and reuse | Quality |
 | Commit attribution | Identity linked to changes | Authorship of the whole repository |
 
-The current `EvidenceStrength` repository heuristic combines size, extracted
-skill count, stars, and recency for ranking. It is not a repository quality score
-and is not promoted into accepted JobML claims.
+The versioned `lucidresume-repository-assessment` has separate originality,
+longevity, engineering-process, documentation, and delivery dimensions. Stars
+and forks are retained as popularity observations but do not raise evidence
+strength. Forks receive a strong authorship discount unless separate contribution
+attribution exists. The assessment ranks evidence for retrieval; it is not a
+general code-quality or personal-skill score and is not promoted into accepted
+JobML claims.
+
+The audit retains archived and small repositories as dated observations rather
+than erasing them. Fork contents and repositories below the configured evidence
+threshold cannot nominate personal skills or résumé projects by default. The
+observation timestamp keeps age, recency, and assessment results reproducible.
+In a full career-record export they remain under `lucidresume.github`, but the
+core claim builder and résumé projector exclude them from personal claims.
+Repository and package-family project IDs are derived from provider identities,
+not generated afresh on import. Re-import refreshes an existing observation in
+place so repository activity and assessment metadata cannot silently go stale.
+
+### Package registry evidence
+
+The NuGet audit combines package IDs from the public owner profile with metadata
+from the V3 `SearchQueryService`. It groups related IDs by a normalised source
+repository or stable package-family prefix. This avoids treating a product with
+dozens of modular packages as dozens of unrelated projects.
+
+Each family becomes one project-shaped ledger record containing package count,
+cumulative registry downloads at observation time, representative IDs, tags,
+and its source repository when published. Downloads describe public registry
+activity. They do not establish code quality, authorship, proficiency, or current
+usage. Package families participate in semantic project retrieval and only enter
+a short résumé when their terms match the target role.
 
 The JobML GitHub extension adds immutable revision capture, observation time,
 contributor attribution, direct dependency and workflow evidence, GitHub
@@ -500,7 +530,7 @@ All tuneable parameters are in `appsettings.json`:
 | `Ollama` | LLM provider URL, model names, context window |
 | `Anthropic` | API key, model selection |
 | `OpenAi` | API key, base URL, model selection |
-| `Tailoring` | Provider selection, term normalization threshold |
+| `Tailoring` | Provider selection, term normalization threshold, optional career-anchor companies |
 | `Embedding` | Provider (onnx/ollama), model path |
 | `JdFusion` | RRF weights, confidence thresholds, NER min length |
 | `Coverage` | Skill semantic threshold, keyword overlap |

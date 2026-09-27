@@ -8,6 +8,8 @@ Deterministic schema: [`jobml-0.1.schema.json`](jobml-0.1.schema.json)
 
 GitHub extension: [`jobml-github-extension-0.1.md`](jobml-github-extension-0.1.md)
 
+Package registry extension: [`jobml-package-extension-0.1.md`](jobml-package-extension-0.1.md)
+
 JobML keeps human-authored Markdown authoritative but not necessarily complete. It embeds a machine-readable YAML projection in a fenced `jobml` block. Human prose may be shortened for a role while JobML retains higher-resolution claims and links to external evidence. Its normative invariant is:
 
 > A JobML claim MUST be traceable to the human-readable or external evidence that supports it, and machine-derived information MUST NOT silently become evidential fact.

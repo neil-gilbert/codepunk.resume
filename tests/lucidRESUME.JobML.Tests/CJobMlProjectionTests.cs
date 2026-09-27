@@ -5,6 +5,17 @@ namespace lucidRESUME.JobML.Tests;
 public sealed class CJobMlProjectionTests
 {
     [Fact]
+    public void Validation_rejects_unknown_entity_projection_preference()
+    {
+        var file = AcceptedFile();
+        file.Data.Entities[0].Projection = new JobMlProjectionPreference { Include = "prestigious" };
+
+        var diagnostic = Assert.Single(JobMlProcessor.Validate(file), item => item.Code == "JML041");
+
+        Assert.Equal(JobMlDiagnosticSeverity.Error, diagnostic.Severity);
+    }
+
+    [Fact]
     public void Projection_IsCompactJatsLikeAndRoundTripsThroughOnePassParser()
     {
         var full = AcceptedFile();

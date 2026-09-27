@@ -80,6 +80,7 @@ public sealed class CareerRecordJobMlBuilder(
                 Language = "en-GB"
             },
             Sources = sources.Select(source => source.Value).ToList(),
+            Extensions = BuildEvidenceExtensions(transcript),
             SemanticSpaces = dimensions == 0
                 ? []
                 :
@@ -100,7 +101,14 @@ public sealed class CareerRecordJobMlBuilder(
             Id = entityIds[subject],
             Type = EntityType(subject),
             Name = SubjectName(subject, claims, evidenceById, transcript),
-            Source = $"#{entityIds[subject]}"
+            Source = $"#{entityIds[subject]}",
+            Projection = FindExperience(subject, transcript)?.IsCareerAnchor == true
+                ? new JobMlProjectionPreference
+                {
+                    Include = "always",
+                    Reason = "Career anchor selected by the author."
+                }
+                : null
         }));
         root.Concepts.AddRange(conceptNames.Select(name => new JobMlConcept
         {
@@ -186,6 +194,75 @@ public sealed class CareerRecordJobMlBuilder(
         return new JobMlFile(markdown, root);
     }
 
+    private static Dictionary<string, object?>? BuildEvidenceExtensions(ResumeDocument transcript)
+    {
+        var repositories = transcript.Projects
+            .Where(project => project.EvidenceMetadata.GetValueOrDefault("provider") == "github")
+            .Select(project => ProjectObservation(project)).ToList();
+        var packages = transcript.Projects
+            .Where(project => project.EvidenceMetadata.GetValueOrDefault("provider") == "nuget")
+            .Select(project => ProjectObservation(project)).ToList();
+        if (repositories.Count == 0 && packages.Count == 0) return null;
+        var extensions = new Dictionary<string, object?>();
+        if (repositories.Count > 0)
+            extensions["lucidresume.github"] = new Dictionary<string, object?>
+            {
+                ["version"] = "0.1",
+                ["repositories"] = repositories
+            };
+        if (packages.Count > 0)
+            extensions["lucidresume.packages"] = new Dictionary<string, object?>
+            {
+                ["version"] = "0.1",
+                ["families"] = packages
+            };
+        return extensions;
+    }
+
+    private static Dictionary<string, object?> ProjectObservation(Project project)
+    {
+        var provider = project.EvidenceMetadata.GetValueOrDefault("provider") ?? "external";
+        var identity = project.EvidenceMetadata.GetValueOrDefault("family_key") ?? project.Url ?? project.Name;
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = StableEntityId($"{provider}:{identity}"),
+            ["name"] = project.Name,
+            ["uri"] = project.Url,
+            ["technologies"] = project.Technologies
+        };
+        foreach (var (key, value) in project.EvidenceMetadata)
+            result[key] = ObservationValue(key, value);
+        return result;
+    }
+
+    private static object ObservationValue(string key, string value)
+    {
+        if (BooleanObservationKeys.Contains(key) && bool.TryParse(value, out var boolean)) return boolean;
+        if (IntegerObservationKeys.Contains(key) && long.TryParse(value, out var integer)) return integer;
+        if (NumericObservationKeys.Contains(key) &&
+            double.TryParse(value, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var number)) return number;
+        return value;
+    }
+
+    private static readonly HashSet<string> BooleanObservationKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "fork", "archived", "tree_truncated", "tree_observed", "has_tests", "has_ci",
+        "has_release_automation", "has_package_manifests", "has_documentation",
+        "has_browser_extension", "eligible_for_personal_evidence", "human_prose_preserved"
+    };
+
+    private static readonly HashSet<string> IntegerObservationKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "file_count", "stars", "forks", "package_count", "total_downloads"
+    };
+
+    private static readonly HashSet<string> NumericObservationKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "repository_age_years", "active_span_years", "evidence_strength", "originality",
+        "longevity", "engineering_process", "documentation", "delivery"
+    };
+
     private static string RenderTranscript(ResumeDocument transcript, IReadOnlyList<LedgerClaim> claims,
         IReadOnlyDictionary<string, EvidenceRecord> evidenceById,
         IReadOnlyDictionary<string, string> entityIds, IReadOnlyDictionary<string, string> claimIds)
@@ -240,13 +317,18 @@ public sealed class CareerRecordJobMlBuilder(
     {
         if (subject == "career-record") return "Career Details";
         if (subject.Equals("personal", StringComparison.OrdinalIgnoreCase)) return "Professional Summary";
+        var project = FindProject(subject, transcript);
+        if (project is not null && !string.IsNullOrWhiteSpace(project.Name))
+            return SingleLine(project.Name);
         var role = claims.FirstOrDefault(claim =>
             string.Equals(claim.SubjectId, subject, StringComparison.OrdinalIgnoreCase) && claim.Kind == "experience");
-        if (role is not null) return role.Statement.Split('|').Take(2).Aggregate((left, right) => $"{left.Trim()} · {right.Trim()}");
+        if (role is not null)
+            return SingleLine(role.Statement.Split('|').Take(2)
+                .Aggregate((left, right) => $"{left.Trim()} · {right.Trim()}"));
         var first = claims.FirstOrDefault(claim => string.Equals(claim.SubjectId, subject, StringComparison.OrdinalIgnoreCase));
         if (first is null) return subject;
-        return first.EvidenceIds.Select(id => evidence.GetValueOrDefault(id)?.Text)
-            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ?? transcript.Personal.FullName ?? subject;
+        return SingleLine(first.EvidenceIds.Select(id => evidence.GetValueOrDefault(id)?.Text)
+            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text)) ?? transcript.Personal.FullName ?? subject);
     }
 
     private static string EntityType(string subject) => subject.Split(':', 2)[0] switch
@@ -256,6 +338,25 @@ public sealed class CareerRecordJobMlBuilder(
         "education" => "education",
         _ => "person"
     };
+
+    private static WorkExperience? FindExperience(string subject, ResumeDocument transcript)
+    {
+        if (!subject.StartsWith("experience:", StringComparison.OrdinalIgnoreCase)) return null;
+        return Guid.TryParse(subject["experience:".Length..], out var id)
+            ? transcript.Experience.FirstOrDefault(experience => experience.Id == id)
+            : null;
+    }
+
+    private static Project? FindProject(string subject, ResumeDocument transcript)
+    {
+        if (!subject.StartsWith("project:", StringComparison.OrdinalIgnoreCase)) return null;
+        return Guid.TryParse(subject["project:".Length..], out var id)
+            ? transcript.Projects.FirstOrDefault(project => project.Id == id)
+            : null;
+    }
+
+    private static string SingleLine(string value) =>
+        string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static string EvidenceType(EvidenceRecord record)
     {

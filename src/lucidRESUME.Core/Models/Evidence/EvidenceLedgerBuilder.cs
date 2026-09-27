@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
 using lucidRESUME.Core.Models.Extraction;
 using lucidRESUME.Core.Models.Resume;
 
@@ -114,6 +115,9 @@ public static partial class EvidenceLedgerBuilder
 
         foreach (var project in resume.Projects)
         {
+            if (project.EvidenceMetadata.TryGetValue("eligible_for_personal_evidence", out var eligible) &&
+                bool.TryParse(eligible, out var mayUse) && !mayUse)
+                continue;
             var subject = $"project:{project.Id:N}";
             Add(ledger, resume, $"{subject}:description", "project", $"{project.Name}: {project.Description}".TrimEnd(' ', ':'),
                 subject, project.Technologies, externalUri: project.Url);
@@ -208,7 +212,7 @@ public static partial class EvidenceLedgerBuilder
         foreach (var education in resume.Education)
             parts.Add($"{education.Id:N}|{education.Degree}|{education.FieldOfStudy}|{education.Institution}|{education.StartDate}|{education.EndDate}");
         foreach (var project in resume.Projects)
-            parts.Add($"{project.Id:N}|{project.Name}|{project.Description}|{project.Url}|{project.Date}|{string.Join('|', project.Technologies)}");
+            parts.Add($"{project.Id:N}|{project.Name}|{project.Description}|{project.Url}|{project.Date}|{string.Join('|', project.Technologies)}|{string.Join('|', project.EvidenceMetadata.OrderBy(item => item.Key).Select(item => $"{item.Key}={item.Value}"))}");
         parts.AddRange(resume.Skills.Select(skill => $"{skill.Name}|{skill.Category}|{skill.YearsExperience}"));
         parts.AddRange(resume.Entities.Select(entity => $"{entity.EntityId:N}|{entity.Value}|{entity.Classification}|{entity.Confidence}"));
         return FastHash(string.Join('\n', parts));
@@ -216,6 +220,12 @@ public static partial class EvidenceLedgerBuilder
 
     private static string Normalize(string value) => Whitespace().Replace(value.Trim(), " ");
     public static string SkillLocator(string value) => $"skill:{Slug(value)}-{FastHash(value)[^8..]}";
+
+    public static Guid StableGuid(string value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim().ToLowerInvariant()));
+        return new Guid(hash.AsSpan(0, 16));
+    }
 
     public static string Slug(string value)
     {
