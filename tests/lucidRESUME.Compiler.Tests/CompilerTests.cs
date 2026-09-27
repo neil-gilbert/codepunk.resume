@@ -47,6 +47,11 @@ public sealed class CompilerTests
 
         Assert.Contains("Led a 15 engineer", result.HumanMarkdown);
         Assert.Contains("**VP Engineering**", result.HumanMarkdown);
+        Assert.Contains("## Core Skills", result.HumanMarkdown);
+        Assert.Contains("**Leadership and delivery:** Engineering Leadership", result.HumanMarkdown);
+        Assert.Contains("**Platform engineering:**", result.HumanMarkdown);
+        Assert.Contains("TypeScript", result.HumanMarkdown);
+        Assert.Contains("AWS", result.HumanMarkdown);
         Assert.Contains("## Experience", result.HumanMarkdown);
         Assert.Contains("### VP Engineering, Example Ltd", result.HumanMarkdown);
         Assert.Contains("Terraform", result.Manifest.Gaps);
@@ -155,6 +160,114 @@ public sealed class CompilerTests
 
         Assert.True(result.HumanMarkdown.IndexOf("Engineering Lead, Recent Ltd", StringComparison.Ordinal) <
                     result.HumanMarkdown.IndexOf("VP Engineering, Example Ltd", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Compiler_retains_reviewed_education_as_a_conventional_section()
+    {
+        const string educationProse = "BSc (Hons) Psychology, University of Stirling.";
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        file = file with
+        {
+            Markdown = file.Markdown + $"\n\n### University of Stirling {{#education}}\n\n<p id=\"degree\">\n{educationProse}\n</p>"
+        };
+        file.Data.Entities.Add(new JobMlEntity
+        {
+            Id = "education", Type = "education", Name = "BSc (Hons) Psychology · University of Stirling",
+            Source = "#education"
+        });
+        file.Data.Claims.Add(new JobMlClaim
+        {
+            Id = "degree", Subject = "education", Type = "education", Statement = educationProse,
+            Review = "accepted", Origin = "declared",
+            Evidence =
+            [
+                new JobMlEvidence
+                {
+                    Type = "prose", Ref = "#degree",
+                    Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(educationProse) }
+                }
+            ]
+        });
+        var source = parser.Serialize(file);
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            source, file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.");
+
+        Assert.Contains("## Education", result.HumanMarkdown);
+        Assert.Contains("BSc (Hons) Psychology", result.HumanMarkdown);
+        Assert.Contains(result.ProjectedJobMl.Data.Claims, claim => claim.Id == "degree");
+        Assert.All(JobMlProcessor.Reconcile(result.ProjectedJobMl).SelectMany(item => item.Evidence),
+            evidence => Assert.True(evidence.State is EvidenceState.Valid or EvidenceState.External));
+    }
+
+    [Fact]
+    public async Task Compiler_prefers_productisation_project_for_an_executive_target()
+    {
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        const string agentBody = "Built a TypeScript and AWS coding agents experiment.";
+        const string productBody = "Led TypeScript and AWS productisation from research through commercial release.";
+        const string agentProse = "Agent experiment: " + agentBody;
+        const string productProse = "Commercial product: " + productBody;
+        file = file with
+        {
+            Markdown = file.Markdown +
+                       $"\n\n<p id=\"agent-project\">\n{agentProse}\n</p>" +
+                       $"\n\n<p id=\"product-project\">\n{productProse}\n</p>"
+        };
+        foreach (var (id, name, prose) in new[]
+                 {
+                     ("agent-project", "Agent experiment", agentProse),
+                     ("product-project", "Commercial product", productProse)
+                 })
+        {
+            file.Data.Entities.Add(new JobMlEntity { Id = id, Type = "project", Name = name, Source = $"#{id}" });
+            file.Data.Claims.Add(new JobMlClaim
+            {
+                Id = $"{id}-claim", Subject = id, Type = "project", Statement = prose,
+                Review = "accepted", Origin = "declared",
+                Concepts = new JobMlClaimConcepts { Skills = ["typescript", "aws"] },
+                Evidence =
+                [
+                    new JobMlEvidence
+                    {
+                        Type = "prose", Ref = $"#{id}",
+                        Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(prose) }
+                    }
+                ]
+            });
+        }
+        var source = parser.Serialize(file);
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            source, file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.",
+            new CompilationOptions { MinimumExperienceSections = 0, MaximumSections = 1, MaximumClaims = 1 });
+
+        Assert.Contains(productBody, result.HumanMarkdown);
+        Assert.DoesNotContain(productProse, result.HumanMarkdown);
+        Assert.DoesNotContain(agentBody, result.HumanMarkdown);
+
+        var handsOnCompiler = new JobMlResumeCompiler(new FakeJobParser(new JobDescription
+            {
+                Title = "Engineering Technical Lead",
+                RequiredSkills = ["TypeScript", "AWS"],
+                Responsibilities = ["Use AI-assisted development and coding agents throughout delivery"]
+            }), new ResumeCompositionOrchestrator([], new CompositionValidator()));
+        var handsOn = await handsOnCompiler.CompileAsync(snapshot,
+            "Engineering Technical Lead using AI-assisted development and coding agents.",
+            new CompilationOptions { MinimumExperienceSections = 0, MaximumSections = 1, MaximumClaims = 1 });
+
+        Assert.Contains(agentBody, handsOn.HumanMarkdown);
+        Assert.DoesNotContain(agentProse, handsOn.HumanMarkdown);
+        Assert.DoesNotContain(productBody, handsOn.HumanMarkdown);
     }
 
     [Fact]
@@ -289,7 +402,7 @@ public sealed class CompilerTests
     }
 
     [Fact]
-    public async Task Compiler_limits_each_role_to_three_selected_claims_and_a_compact_target_brief()
+    public async Task Compiler_limits_each_role_to_two_selected_claims_and_a_compact_target_brief()
     {
         var parser = new JobMlParser();
         var file = parser.Parse(Fixture.Source);
@@ -325,11 +438,43 @@ public sealed class CompilerTests
         var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.");
         var section = Assert.Single(result.Manifest.Sections);
 
-        Assert.InRange(section.Claims.Count, 2, 3);
+        Assert.InRange(section.Claims.Count, 1, 2);
         Assert.InRange(section.MaximumWords, 24, 76);
         Assert.True(section.Claims.Sum(claim => CountWords(claim.Prose)) <= section.MaximumWords);
         Assert.Contains("not a catalogue of duties", section.Intent);
         Assert.Contains("target emphasis", section.Intent);
+    }
+
+    [Fact]
+    public async Task Compiler_retains_a_reviewed_role_framing_claim_before_keyword_dense_detail()
+    {
+        const string framing = "Asked to design two auditable customer-import systems for a regulated workflow.";
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        file = file with { Markdown = file.Markdown + $"\n\n<p id=\"role-framing\">\n{framing}\n</p>" };
+        file.Data.Claims.Add(new JobMlClaim
+        {
+            Id = "role-framing", Subject = "example-role", Type = "achievement", Statement = framing,
+            Review = "accepted", Origin = "declared",
+            Evidence =
+            [
+                new JobMlEvidence
+                {
+                    Type = "prose", Ref = "#role-framing",
+                    Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(framing) }
+                }
+            ]
+        });
+        var source = parser.Serialize(file);
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            source, file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.");
+
+        Assert.Contains(framing, result.HumanMarkdown);
+        Assert.Contains("Led a 15 engineer TypeScript team", result.HumanMarkdown);
     }
 
     [Fact]
@@ -360,6 +505,43 @@ public sealed class CompilerTests
     }
 
     [Fact]
+    public async Task Compiler_keeps_the_reviewed_identity_sentence_when_targeting_a_summary()
+    {
+        const string summary = "Hands-on engineering leader with more than 20 years of experience building products and leading teams. Uses coding agents daily across design, implementation, testing and review, taking AI products from research through commercial release. Combines C#, ASP.NET Core, TypeScript, AWS and distributed systems with technical strategy and delivery governance. Has led teams of more than 10 engineers and trained more than 200 developers. Builds deterministic evaluation, provenance, deployment and human-review systems around probabilistic components.";
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        file = file with { Markdown = file.Markdown + $"\n\n<p id=\"professional-summary\">\n{summary}\n</p>" };
+        file.Data.Entities.Add(new JobMlEntity
+        {
+            Id = "person", Type = "person", Name = "Professional Summary", Source = "#professional-summary"
+        });
+        file.Data.Claims.Add(new JobMlClaim
+        {
+            Id = "summary", Subject = "person", Type = "summary", Statement = summary,
+            Review = "accepted", Origin = "declared",
+            Evidence =
+            [
+                new JobMlEvidence
+                {
+                    Type = "prose", Ref = "#professional-summary",
+                    Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(summary) }
+                }
+            ]
+        });
+        var source = parser.Serialize(file);
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            source, file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.");
+        var summaryPacket = result.Manifest.Sections.Single(section => section.Kind == "summary");
+
+        Assert.StartsWith("Hands-on engineering leader", summaryPacket.Claims.Single().Prose);
+        Assert.InRange(CountWords(summaryPacket.Claims.Single().Prose), 1, 80);
+    }
+
+    [Fact]
     public async Task Orchestrator_discards_a_pass_that_invents_a_number()
     {
         var claim = new JobMlClaim { Id = "leadership", Subject = "role", Statement = "Led engineering." };
@@ -373,6 +555,59 @@ public sealed class CompilerTests
 
         Assert.Equal("Led a 15 engineer team.", result.Blocks.Single().Text);
         Assert.Contains(result.Warnings, x => x.Contains("numeric fact '40'"));
+    }
+
+    [Fact]
+    public void Validator_allows_numeric_thousands_separator_formatting()
+    {
+        var claim = new JobMlClaim { Id = "scale", Subject = "role", Statement = "Served 5000 customers." };
+        var selected = new SelectedClaim(claim, "Example", "Served 5000 customers.", ["e1"], .9, []);
+        var packet = new EvidencePacket("role", "Example", "tighten", 20, [selected], []);
+        var manifest = new ProjectionManifest("source", "job", DateTimeOffset.UtcNow, [], [packet], [], [], "lexical");
+        var source = new CompositionBlock("role", "Served 5000 customers.", ["scale"], ["e1"]);
+        var draft = new CompositionDraft([source with { Text = "Served 5,000 customers." }], []);
+
+        var errors = new CompositionValidator().Validate(draft, [source], manifest);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validator_treats_led_and_lead_as_the_same_grounded_term()
+    {
+        var claim = new JobMlClaim { Id = "leadership", Subject = "role", Statement = "Led delivery." };
+        var selected = new SelectedClaim(claim, "Example", "Led delivery.", ["e1"], .9, []);
+        var packet = new EvidencePacket("role", "Example", "tighten", 20, [selected], []);
+        var requirement = new CompilerRequirement("req-1", "Lead delivery", RequirementKind.Required, "Lead delivery");
+        var manifest = new ProjectionManifest("source", "job", DateTimeOffset.UtcNow,
+            [requirement], [packet], [], [], "lexical");
+        var source = new CompositionBlock("role", "Led delivery.", ["leadership"], ["e1"]);
+        var draft = new CompositionDraft([source with { Text = "Lead delivery." }], []);
+
+        var errors = new CompositionValidator().Validate(draft, [source], manifest);
+
+        Assert.Empty(errors);
+    }
+
+    [Theory]
+    [InlineData("Led a team.", "Led teams.", "Lead teams")]
+    [InlineData("Delivered a service.", "Delivery of services.", "Service delivery")]
+    public void Validator_allows_bounded_inflection_changes(
+        string sourceText, string editedText, string requirementText)
+    {
+        var claim = new JobMlClaim { Id = "grounded", Subject = "role", Statement = sourceText };
+        var selected = new SelectedClaim(claim, "Example", sourceText, ["e1"], .9, []);
+        var packet = new EvidencePacket("role", "Example", "tighten", 20, [selected], []);
+        var requirement = new CompilerRequirement("req-1", requirementText,
+            RequirementKind.Required, requirementText);
+        var manifest = new ProjectionManifest("source", "job", DateTimeOffset.UtcNow,
+            [requirement], [packet], [], [], "lexical");
+        var source = new CompositionBlock("role", sourceText, ["grounded"], ["e1"]);
+        var draft = new CompositionDraft([source with { Text = editedText }], []);
+
+        var errors = new CompositionValidator().Validate(draft, [source], manifest);
+
+        Assert.Empty(errors);
     }
 
     [Fact]
@@ -433,10 +668,10 @@ public sealed class CompilerTests
         Assert.False(result.Used);
     }
 
-    private sealed class FakeJobParser : IJobSpecParser
+    private sealed class FakeJobParser(JobDescription? parsed = null) : IJobSpecParser
     {
         public Task<JobDescription> ParseFromTextAsync(string text, CancellationToken ct = default) =>
-            Task.FromResult(new JobDescription
+            Task.FromResult(parsed ?? new JobDescription
             {
                 Title = "VP Engineering",
                 RawText = text,

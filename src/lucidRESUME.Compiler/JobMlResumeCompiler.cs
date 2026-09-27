@@ -25,7 +25,8 @@ public sealed class JobMlResumeCompiler(
         options ??= new CompilationOptions();
 
         var job = await jobParser.ParseFromTextAsync(jobDescription, cancellationToken);
-        var requirements = BuildRequirements(job.RequiredSkills, job.PreferredSkills, job.Responsibilities);
+        var requirements = BuildRequirements(job.RequiredSkills, job.PreferredSkills, job.Responsibilities,
+            job.RequiredEducation);
         if (requirements.Count == 0)
             requirements = ExtractFallbackRequirements(jobDescription);
 
@@ -74,7 +75,7 @@ public sealed class JobMlResumeCompiler(
             .Select(entity => entity.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var selected = SelectClaims(candidates, accepted, matches, reconciled, entities, index, options,
-            careerAnchorSubjects);
+            careerAnchorSubjects, job.Title, requirements);
         var sections = selected.GroupBy(x => x.Claim.Subject, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(group => group.Any(item => item.Claim.Type == "summary"))
             .ThenByDescending(group => ExperienceSortDate(group.Key, accepted).End)
@@ -92,10 +93,14 @@ public sealed class JobMlResumeCompiler(
             sections,
             matches,
             gaps,
-            embeddings is null ? "lexical" : "configured");
+            embeddings is null ? "lexical" : "configured")
+        {
+            TargetTitle = job.Title
+        };
 
         var composed = await composition.ComposeAsync(manifest, jobDescription, options, cancellationToken);
-        var human = RenderHumanMarkdown(completeResume.File.Markdown, composed.Blocks, sections, job.Title);
+        var human = RenderHumanMarkdown(completeResume.File.Markdown, composed.Blocks, sections, job.Title,
+            selected, completeResume.File.Data.Concepts, requirements);
         var projected = BuildProjection(completeResume.File, human, composed.Blocks, selected,
             options.FullJobMlUri);
         var full = JobMlArtifactComposer.Compose(projected);
@@ -110,7 +115,10 @@ public sealed class JobMlResumeCompiler(
         IReadOnlyList<CompilerRequirement> requirements,
         IReadOnlyList<JobMlClaim> acceptedClaims)
     {
-        var rankedClaims = group.OrderByDescending(x => x.Score).ToList();
+        var rankedClaims = group
+            .OrderByDescending(item => RoleFramingClaimSignal(item.Claim.Statement) >= 7)
+            .ThenByDescending(item => item.Score)
+            .ToList();
         var initialRequirementIds = rankedClaims.SelectMany(x => x.Matches)
             .Select(x => x.RequirementId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -123,13 +131,15 @@ public sealed class JobMlResumeCompiler(
         var focus = allFocus.Take(6).ToList();
         var isSummary = rankedClaims.Any(item => item.Claim.Type == "summary");
         var isProject = rankedClaims.Any(item => item.Claim.Type == "project");
+        var isEducation = rankedClaims.Any(item => item.Claim.Type == "education");
         // A senior summary needs enough room for identity, the vacancy-specific
         // differentiator and the relevant implementation/leadership context. At
         // 72 words the sentence-preserving compactor commonly retained identity
         // and stack but dropped the differentiator (for example daily agent use).
-        var targetWords = isSummary ? 80 : isProject ? 60 : 44 + Math.Max(0, rankedClaims.Count - 1) * 16;
+        var targetWords = isSummary ? 80 : isEducation ? 36 : isProject ? 60 :
+            48 + Math.Max(0, rankedClaims.Count - 1) * 20;
         targetWords = Math.Min(targetWords, isSummary ? 80 : 76);
-        var claims = FitHumanProse(rankedClaims, targetWords, allFocus);
+        var claims = FitHumanProse(rankedClaims, targetWords, allFocus, isSummary);
         var requirementIds = claims.SelectMany(x => x.Matches)
             .Select(x => x.RequirementId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -143,7 +153,7 @@ public sealed class JobMlResumeCompiler(
             intent += $" The target emphasis is: {string.Join("; ", focus)}.";
 
         var heading = isSummary ? "Professional Summary" : CompactHeading(claims[0].SubjectName);
-        var dateRange = isSummary ? null : ExperienceDateRange(group.Key, acceptedClaims);
+        var dateRange = isSummary || isProject || isEducation ? null : ExperienceDateRange(group.Key, acceptedClaims);
         if (!string.IsNullOrWhiteSpace(dateRange)) heading += $" | {dateRange}";
 
         return new EvidencePacket(
@@ -153,13 +163,14 @@ public sealed class JobMlResumeCompiler(
             maximumWords,
             claims,
             requirementIds,
-            isSummary ? "summary" : isProject ? "project" : "experience");
+            isSummary ? "summary" : isProject ? "project" : isEducation ? "education" : "experience");
     }
 
     private static List<SelectedClaim> FitHumanProse(
         IReadOnlyList<SelectedClaim> claims,
         int wordBudget,
-        IReadOnlyList<string> focus)
+        IReadOnlyList<string> focus,
+        bool preserveOpening = false)
     {
         var fitted = new List<SelectedClaim>();
         var remaining = wordBudget;
@@ -167,7 +178,8 @@ public sealed class JobMlResumeCompiler(
         {
             var futureMinimum = Math.Min(claims.Count - index - 1, 2) * 12;
             var allowance = Math.Max(12, remaining - futureMinimum);
-            var prose = CompactHumanProse(claims[index].Prose, allowance, focus);
+            var sourceProse = StripRepeatedHeadingPrefix(claims[index].Prose, claims[index].SubjectName);
+            var prose = CompactHumanProse(sourceProse, allowance, focus, preserveOpening && index == 0);
             var words = WordCount(prose);
             if (words == 0 || words > remaining)
             {
@@ -181,7 +193,20 @@ public sealed class JobMlResumeCompiler(
         return fitted.Count > 0 ? fitted : [claims[0]];
     }
 
-    private static string CompactHumanProse(string prose, int maximumWords, IReadOnlyList<string> focus)
+    private static string StripRepeatedHeadingPrefix(string prose, string subjectName)
+    {
+        var normalized = MarkdownEvidenceIndex.NormalizeText(prose);
+        var heading = CompactHeading(subjectName).Trim();
+        if (heading.Length == 0 || !normalized.StartsWith(heading, StringComparison.OrdinalIgnoreCase))
+            return normalized;
+        var remainder = normalized[heading.Length..];
+        return remainder.StartsWith(':')
+            ? remainder[1..].TrimStart()
+            : normalized;
+    }
+
+    private static string CompactHumanProse(string prose, int maximumWords, IReadOnlyList<string> focus,
+        bool preserveOpening = false)
     {
         var normalized = MarkdownEvidenceIndex.NormalizeText(prose);
         if (WordCount(normalized) <= maximumWords) return normalized;
@@ -194,7 +219,17 @@ public sealed class JobMlResumeCompiler(
         var focusTokens = Tokens(string.Join(' ', focus));
         var selected = new List<(string Text, int Index)>();
         var remaining = maximumWords;
+        if (preserveOpening)
+        {
+            var openingWords = WordCount(sentences[0].Text);
+            if (openingWords <= remaining)
+            {
+                selected.Add((sentences[0].Text, sentences[0].Index));
+                remaining -= openingWords;
+            }
+        }
         foreach (var sentence in sentences
+                     .Where(item => selected.All(existing => existing.Index != item.Index))
                      .OrderByDescending(item => Tokens(item.Text).Intersect(focusTokens).Count())
                      .ThenBy(item => item.Index))
         {
@@ -284,7 +319,8 @@ public sealed class JobMlResumeCompiler(
         IReadOnlyList<ClaimMatch> matches,
         IReadOnlyDictionary<string, ClaimEvidenceResolution> reconciled,
         IReadOnlyDictionary<string, JobMlEntity> entities, MarkdownEvidenceIndex index,
-        CompilationOptions options, IReadOnlySet<string>? careerAnchorSubjects = null)
+        CompilationOptions options, IReadOnlySet<string>? careerAnchorSubjects = null,
+        string? targetTitle = null, IReadOnlyList<CompilerRequirement>? requirements = null)
     {
         var result = new List<SelectedClaim>();
         var coveredRequirements = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -338,6 +374,32 @@ public sealed class JobMlResumeCompiler(
                 summary.Claim.Evidence.Select((e, i) => e.Id ?? $"{summary.Claim.Id}-e{i + 1}").ToList(),
                 summary.Matches.Select(match => match.Score).DefaultIfEmpty(.55).Max(), summary.Matches));
 
+        // Education is compact, conventional resume information. Keep reviewed
+        // qualifications visible even when an advert does not use the same wording
+        // (for example "degree" versus the qualification's exact title).
+        foreach (var education in candidates
+                     .Where(claim => claim.Type == "education")
+                     .Select(claim => new
+                     {
+                         Claim = claim,
+                         Matches = matches.Where(match =>
+                             match.ClaimId.Equals(claim.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                         Prose = ResolveProse(claim, reconciled, index)
+                     })
+                     .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Prose))
+                     .GroupBy(candidate => candidate.Claim.Subject, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group.OrderByDescending(candidate =>
+                         candidate.Matches.Select(match => match.Score).DefaultIfEmpty(.4).Max()).First()))
+        {
+            if (result.Any(item => item.Claim.Id.Equals(education.Claim.Id, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            result.Add(new SelectedClaim(education.Claim,
+                entities.GetValueOrDefault(education.Claim.Subject)?.Name ?? education.Claim.Subject,
+                education.Prose!,
+                education.Claim.Evidence.Select((e, i) => e.Id ?? $"{education.Claim.Id}-e{i + 1}").ToList(),
+                education.Matches.Select(match => match.Score).DefaultIfEmpty(.4).Max(), education.Matches));
+        }
+
         // Reserve relevant employment evidence before project matches consume the
         // section budget. Leadership resumes still need to read as career histories.
         var reservedRoles = candidates
@@ -351,16 +413,22 @@ public sealed class JobMlResumeCompiler(
                 Prose = ResolveProse(claim, reconciled, index),
                 Recency = ExperienceRecency(claim.Subject, acceptedClaims)
             })
-            .Where(candidate => candidate.Matches.Count > 0 && !string.IsNullOrWhiteSpace(candidate.Prose))
+            .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Prose))
             .GroupBy(candidate => candidate.Claim.Subject, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group
-                .OrderByDescending(candidate =>
-                    candidate.Matches.Max(match => match.Score) * .55 + candidate.Recency * .45)
-                .ThenByDescending(candidate => LeadershipClaimSignal(candidate.Claim.Statement))
-                .First())
-            .OrderByDescending(candidate =>
-                candidate.Matches.Max(match => match.Score) * .55 + candidate.Recency * .45)
-            .Take(options.MinimumExperienceSections);
+            .Where(group => group.Any(candidate => candidate.Matches.Count > 0))
+            .Select(group => new
+            {
+                Candidate = group
+                    .OrderByDescending(candidate => RoleFramingClaimSignal(candidate.Claim.Statement) >= 7)
+                    .ThenByDescending(candidate => candidate.Matches.Select(match => match.Score).DefaultIfEmpty(.4).Max() +
+                                                   Math.Min(.2, RoleFramingClaimSignal(candidate.Claim.Statement) * .025))
+                    .First(),
+                SubjectMatch = group.SelectMany(candidate => candidate.Matches)
+                    .Select(match => match.Score).DefaultIfEmpty(.55).Max()
+            })
+            .OrderByDescending(item => item.SubjectMatch * .55 + item.Candidate.Recency * .45)
+            .Take(options.MinimumExperienceSections)
+            .Select(item => item.Candidate);
         foreach (var role in reservedRoles)
         {
             if (result.Any(item => item.Claim.Id.Equals(role.Claim.Id, StringComparison.OrdinalIgnoreCase))) continue;
@@ -368,8 +436,68 @@ public sealed class JobMlResumeCompiler(
                 entities.GetValueOrDefault(role.Claim.Subject)?.Name ?? role.Claim.Subject,
                 role.Prose!,
                 role.Claim.Evidence.Select((e, i) => e.Id ?? $"{role.Claim.Id}-e{i + 1}").ToList(),
-                role.Matches.Max(match => match.Score), role.Matches));
+                role.Matches.Select(match => match.Score).DefaultIfEmpty(.55).Max(), role.Matches));
             foreach (var requirement in role.Matches.Select(match => match.RequirementId))
+                coveredRequirements.Add(requirement);
+
+            if (NonAnchorClaimCount(result, careerAnchorSubjects) >= options.MaximumClaims ||
+                options.MaximumClaimsPerSubject < 2) continue;
+            var supporting = candidates
+                .Where(claim => claim.Subject.Equals(role.Claim.Subject, StringComparison.OrdinalIgnoreCase) &&
+                                !claim.Id.Equals(role.Claim.Id, StringComparison.OrdinalIgnoreCase))
+                .Select(claim => new
+                {
+                    Claim = claim,
+                    Matches = matches.Where(match =>
+                        match.ClaimId.Equals(claim.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                    Prose = ResolveProse(claim, reconciled, index)
+                })
+                .Where(candidate => candidate.Matches.Count > 0 && !string.IsNullOrWhiteSpace(candidate.Prose))
+                .Where(candidate => TextOverlap(role.Prose!, candidate.Prose!) < .48)
+                .OrderByDescending(candidate => candidate.Matches.Max(match => match.Score))
+                .FirstOrDefault();
+            if (supporting is null) continue;
+            result.Add(new SelectedClaim(supporting.Claim,
+                entities.GetValueOrDefault(supporting.Claim.Subject)?.Name ?? supporting.Claim.Subject,
+                supporting.Prose!,
+                supporting.Claim.Evidence.Select((e, i) => e.Id ?? $"{supporting.Claim.Id}-e{i + 1}").ToList(),
+                supporting.Matches.Max(match => match.Score), supporting.Matches));
+            foreach (var requirement in supporting.Matches.Select(match => match.RequirementId))
+                coveredRequirements.Add(requirement);
+        }
+
+        // Keep a stable, role-relevant engineering portfolio. Without this
+        // reservation, projects compete with every supporting employment claim
+        // and can disappear when an unrelated role gains one extra passage.
+        var reservedProjects = candidates
+            .Where(claim => claim.Type == "project" ||
+                            entities.GetValueOrDefault(claim.Subject)?.Type == "project")
+            .Select(claim => new
+            {
+                Claim = claim,
+                Matches = matches.Where(match =>
+                    match.ClaimId.Equals(claim.Id, StringComparison.OrdinalIgnoreCase)).ToList(),
+                Prose = ResolveProse(claim, reconciled, index)
+            })
+            .Where(candidate => candidate.Matches.Count > 0 && !string.IsNullOrWhiteSpace(candidate.Prose))
+            .GroupBy(candidate => candidate.Claim.Subject, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(candidate =>
+                    ProjectSelectionScore(candidate.Matches, candidate.Claim.Statement, targetTitle, requirements))
+                .First())
+            .OrderByDescending(candidate =>
+                ProjectSelectionScore(candidate.Matches, candidate.Claim.Statement, targetTitle, requirements))
+            .Take(options.MinimumProjectSections);
+        foreach (var project in reservedProjects)
+        {
+            if (NonAnchorClaimCount(result, careerAnchorSubjects) >= options.MaximumClaims) break;
+            if (result.Any(item => item.Claim.Id.Equals(project.Claim.Id, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            result.Add(new SelectedClaim(project.Claim,
+                entities.GetValueOrDefault(project.Claim.Subject)?.Name ?? project.Claim.Subject,
+                project.Prose!,
+                project.Claim.Evidence.Select((e, i) => e.Id ?? $"{project.Claim.Id}-e{i + 1}").ToList(),
+                project.Matches.Max(match => match.Score), project.Matches));
+            foreach (var requirement in project.Matches.Select(match => match.RequirementId))
                 coveredRequirements.Add(requirement);
         }
 
@@ -388,13 +516,23 @@ public sealed class JobMlResumeCompiler(
                 var uncoveredBonus = x.Matches.Any(m => !coveredRequirements.Contains(m.RequirementId)) ? .12 : 0;
                 var subjectPenalty = result.Count(r => r.Claim.Subject.Equals(x.Claim.Subject, StringComparison.OrdinalIgnoreCase)) * options.DiversityPenalty;
                 var conceptOverlap = result.Count == 0 ? 0 : result.Max(r => Jaccard(r.Claim.Concepts.All, x.Claim.Concepts.All)) * options.DiversityPenalty;
-                return x.Matches.Max(m => m.Score) + uncoveredBonus - subjectPenalty - conceptOverlap;
+                var executiveProjectBonus = IsExecutiveTarget(targetTitle) && x.Claim.Type == "project" &&
+                                             IsProductisationEvidence(x.Claim.Statement)
+                    ? .24
+                    : 0;
+                var recencyBonus = entities.GetValueOrDefault(x.Claim.Subject)?.Type == "experience"
+                    ? ExperienceRecency(x.Claim.Subject, acceptedClaims) * .08
+                    : 0;
+                var framingBonus = Math.Min(.1, RoleFramingClaimSignal(x.Claim.Statement) * .0125);
+                return x.Matches.Max(m => m.Score) + uncoveredBonus + executiveProjectBonus + recencyBonus +
+                       framingBonus - subjectPenalty - conceptOverlap;
             }).First();
             pending.Remove(claim);
             var isNewSubject = result.All(existing =>
                 !existing.Claim.Subject.Equals(claim.Claim.Subject, StringComparison.OrdinalIgnoreCase));
             if (isNewSubject && result
                     .Where(existing => careerAnchorSubjects?.Contains(existing.Claim.Subject) != true)
+                    .Where(existing => existing.Claim.Type is not ("summary" or "education"))
                     .Select(existing => existing.Claim.Subject)
                     .Distinct(StringComparer.OrdinalIgnoreCase).Count() >= options.MaximumSections)
                 continue;
@@ -420,10 +558,49 @@ public sealed class JobMlResumeCompiler(
         return result;
     }
 
+    private static bool IsExecutiveTarget(string? title) => !string.IsNullOrWhiteSpace(title) &&
+        (title.Contains("Head", StringComparison.OrdinalIgnoreCase) ||
+         title.Contains("VP", StringComparison.OrdinalIgnoreCase) ||
+         title.Contains("Chief", StringComparison.OrdinalIgnoreCase) ||
+         title.Contains("CTO", StringComparison.OrdinalIgnoreCase) ||
+         title.Contains("Director", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsProductisationEvidence(string statement) =>
+        statement.Contains("productisation", StringComparison.OrdinalIgnoreCase) ||
+        statement.Contains("commercial platform", StringComparison.OrdinalIgnoreCase) ||
+        statement.Contains("commercial release", StringComparison.OrdinalIgnoreCase);
+
+    private static double ProjectSelectionScore(
+        IReadOnlyList<ClaimMatch> matches, string statement, string? targetTitle,
+        IReadOnlyList<CompilerRequirement>? requirements) =>
+        matches.Select(match => match.Score).DefaultIfEmpty(0).Max() +
+        Math.Min(.3, matches.Select(match => match.RequirementId)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Count() * .03) +
+        (IsExecutiveTarget(targetTitle) && IsProductisationEvidence(statement) ? .24 : 0) +
+        AgenticProjectBonus(matches, statement, requirements);
+
+    private static double AgenticProjectBonus(
+        IReadOnlyList<ClaimMatch> matches, string statement,
+        IReadOnlyList<CompilerRequirement>? requirements)
+    {
+        if (!statement.Contains("coding agent", StringComparison.OrdinalIgnoreCase) &&
+            !statement.Contains("coding CLI", StringComparison.OrdinalIgnoreCase) &&
+            !statement.Contains("agent orchestration", StringComparison.OrdinalIgnoreCase)) return 0;
+        var matched = matches.Select(match => match.RequirementId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return requirements?.Any(requirement => matched.Contains(requirement.Id) &&
+            (requirement.Text.Contains("coding agent", StringComparison.OrdinalIgnoreCase) ||
+             requirement.Text.Contains("AI-assisted", StringComparison.OrdinalIgnoreCase) ||
+             requirement.Text.Contains("agent orchestration", StringComparison.OrdinalIgnoreCase))) == true
+            ? .18
+            : 0;
+    }
+
     private static int NonAnchorClaimCount(
         IEnumerable<SelectedClaim> selected,
         IReadOnlySet<string>? careerAnchorSubjects) => selected.Count(item =>
-        careerAnchorSubjects?.Contains(item.Claim.Subject) != true);
+        careerAnchorSubjects?.Contains(item.Claim.Subject) != true &&
+        item.Claim.Type is not ("summary" or "education"));
 
     private static string? ResolveProse(JobMlClaim claim,
         IReadOnlyDictionary<string, ClaimEvidenceResolution> reconciled, MarkdownEvidenceIndex index) =>
@@ -447,14 +624,17 @@ public sealed class JobMlResumeCompiler(
         return score;
     }
 
-    private static int LeadershipClaimSignal(string statement)
+    private static int RoleFramingClaimSignal(string statement)
     {
-        var score = CareerAnchorClaimSignal(statement);
+        var score = 0;
+        if (statement.Contains("took technical ownership", StringComparison.OrdinalIgnoreCase) ||
+            statement.Contains("owned", StringComparison.OrdinalIgnoreCase)) score += 8;
+        if (statement.Contains("asked to", StringComparison.OrdinalIgnoreCase) ||
+            statement.Contains("commissioned", StringComparison.OrdinalIgnoreCase)) score += 7;
         if (statement.Contains("recruited", StringComparison.OrdinalIgnoreCase) ||
-            statement.Contains("hired", StringComparison.OrdinalIgnoreCase)) score += 6;
-        if (statement.Contains("engineering standards", StringComparison.OrdinalIgnoreCase)) score += 4;
-        if (statement.Contains("team", StringComparison.OrdinalIgnoreCase)) score += 2;
-        if (statement.Contains("mentored", StringComparison.OrdinalIgnoreCase)) score += 2;
+            statement.Contains("hired", StringComparison.OrdinalIgnoreCase)) score += 7;
+        if (statement.Contains("led", StringComparison.OrdinalIgnoreCase)) score += 5;
+        if (statement.Contains("responsible for", StringComparison.OrdinalIgnoreCase)) score += 4;
         return score;
     }
 
@@ -621,13 +801,15 @@ public sealed class JobMlResumeCompiler(
     }
 
     private static string RenderHumanMarkdown(string completeMarkdown,
-        IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<EvidencePacket> packets, string? targetTitle)
+        IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<EvidencePacket> packets, string? targetTitle,
+        IReadOnlyList<SelectedClaim> selected, IReadOnlyList<JobMlConcept> concepts,
+        IReadOnlyList<CompilerRequirement> requirements)
     {
         var firstSection = Regex.Match(completeMarkdown, @"(?m)^##\s+");
         var identity = (firstSection.Success ? completeMarkdown[..firstSection.Index] : completeMarkdown).Trim();
         if (string.IsNullOrWhiteSpace(identity)) identity = "# Résumé";
         var packetById = packets.ToDictionary(packet => packet.SectionId, StringComparer.OrdinalIgnoreCase);
-        var orderedKinds = new[] { "summary", "project", "experience" };
+        var orderedKinds = new[] { "summary", "project", "experience", "education" };
         var renderedGroups = new List<string>();
         foreach (var kind in orderedKinds)
         {
@@ -644,9 +826,37 @@ public sealed class JobMlResumeCompiler(
                 continue;
             }
 
-            var groupHeading = kind == "project" ? "Selected AI Engineering" : "Experience";
+            if (kind == "education" && matching.Count == 1)
+            {
+                var block = matching[0];
+                renderedGroups.Add($"## Education {{#{block.SectionId}}}\n\n" +
+                                   MarkdownEvidenceIndex.NormalizeText(block.Text));
+                continue;
+            }
+
+            var groupHeading = kind switch
+            {
+                "project" => "Selected Engineering",
+                "education" => "Education",
+                _ => "Experience"
+            };
             renderedGroups.Add($"## {groupHeading}\n\n" + string.Join("\n\n", matching.Select(block =>
                 RenderResumeBlock(block, packetById[block.SectionId], 3))));
+        }
+
+        // The visible index is a compact projection of this document, not of the
+        // broader source ledger. Only advertise concepts whose claim IDs survived
+        // paragraph fitting and therefore remain traceable in the rendered JobML.
+        var renderedClaimIds = blocks.SelectMany(block => block.ClaimIds)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var skills = RenderCoreSkills(selected
+            .Where(item => renderedClaimIds.Contains(item.Claim.Id))
+            .ToList(), concepts, requirements);
+        if (!string.IsNullOrWhiteSpace(skills))
+        {
+            var summaryEnd = renderedGroups.FindLastIndex(group =>
+                group.StartsWith("## Professional Summary", StringComparison.Ordinal));
+            renderedGroups.Insert(summaryEnd + 1, skills);
         }
 
         var title = string.IsNullOrWhiteSpace(targetTitle)
@@ -666,19 +876,116 @@ public sealed class JobMlResumeCompiler(
                MarkdownEvidenceIndex.NormalizeText(block.Text);
     }
 
+    private static string? RenderCoreSkills(
+        IReadOnlyList<SelectedClaim> selected,
+        IReadOnlyList<JobMlConcept> concepts,
+        IReadOnlyList<CompilerRequirement> requirements)
+    {
+        var byId = concepts.ToDictionary(concept => concept.Id, StringComparer.OrdinalIgnoreCase);
+        var requirementText = string.Join(' ', requirements.Select(requirement => requirement.Text));
+        var selectedConcepts = selected
+            .Where(item => item.Claim.Type is not ("summary" or "education"))
+            .SelectMany(item => item.Claim.Concepts.All.Select(id => new { Id = id, Item = item }))
+            .Where(entry => byId.ContainsKey(entry.Id))
+            .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => new
+            {
+                Score = group.Max(entry => entry.Item.Score),
+                Subjects = group.Select(entry => entry.Item.Claim.Subject)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).Count()
+            }, StringComparer.OrdinalIgnoreCase);
+        var displayStopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "coding", "commercial", "deployment", "design", "engineering", "engineer", "engineers",
+            "experience", "implementation", "it", "lead", "mentor", "or", "product", "products",
+            "production", "research", "responsible", "review", "systems", "teams", "technical",
+            "technology", "test", "testing", "workflow", "workflows"
+        };
+        var rankedConcepts = selectedConcepts
+            .Select(entry =>
+            {
+                var concept = byId[entry.Key];
+                var terms = new[] { concept.Name }.Concat(concept.Aliases)
+                    .Where(term => !string.IsNullOrWhiteSpace(term) && term.Trim().Length >= 2)
+                    .ToList();
+                var requirementMatch = terms.Any(term => requirementText.Contains(term, StringComparison.OrdinalIgnoreCase));
+                return new
+                {
+                    Concept = concept,
+                    Score = entry.Value.Score + (requirementMatch ? 1 : 0) +
+                            Math.Min(.5, entry.Value.Subjects * .1)
+                };
+            })
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Concept.Name) && entry.Concept.Name.Length <= 48 &&
+                            !displayStopWords.Contains(entry.Concept.Name.Trim()))
+            .OrderByDescending(entry => entry.Score)
+            .ThenBy(entry => entry.Concept.Name, StringComparer.OrdinalIgnoreCase)
+            .DistinctBy(entry => DisplayConceptFamily(entry.Concept.Name), StringComparer.OrdinalIgnoreCase)
+            .Select(entry => entry.Concept)
+            .ToList();
+        if (rankedConcepts.Count == 0) return null;
+
+        // Apply quotas after categorisation. A single concept-rich project must not
+        // consume the global cut and hide leadership or delivery evidence from the
+        // conventional ATS-visible projection.
+        var names = rankedConcepts.Select(concept => concept.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var capabilities = names.Where(name => DisplaySkillCategory(name) == "capability").Take(6).ToList();
+        var ai = names.Where(name => DisplaySkillCategory(name) == "ai").Take(6).ToList();
+        var platform = names.Where(name => DisplaySkillCategory(name) == "platform").Take(9).ToList();
+        var lines = new List<string>();
+        if (capabilities.Count > 0) lines.Add($"**Leadership and delivery:** {string.Join(", ", capabilities)}");
+        if (ai.Count > 0) lines.Add($"**AI and data:** {string.Join(", ", ai)}");
+        if (platform.Count > 0) lines.Add($"**Platform engineering:** {string.Join(", ", platform)}");
+        return lines.Count == 0 ? null : $"## Core Skills\n\n{string.Join("\n\n", lines)}";
+    }
+
+    private static string DisplaySkillCategory(string name)
+    {
+        var value = name.ToLowerInvariant();
+        string[] capabilityTerms =
+        [
+            "architecture", "delivery", "governance", "leadership", "management", "mentor", "hiring",
+            "security", "standards", "strategy", "technical direction", "productisation"
+        ];
+        if (capabilityTerms.Any(value.Contains)) return "capability";
+        string[] aiTerms =
+        [
+            "ai", "agent", "anthropic", "behavioural", "bm25", "claude", "codex", "deepseek",
+            "document intelligence", "embedding", "evaluation", "graphrag", "hnsw", "leiden", "llm", "llms",
+            "machine learning", "ml", "ner", "ocr", "onnx", "openai", "program synthesis", "prompt",
+            "pgvector", "qdrant", "rag", "retrieval", "semantic", "vector"
+        ];
+        return aiTerms.Any(term => term.Length <= 3
+            ? Regex.IsMatch(value, $@"\b{Regex.Escape(term)}\b", RegexOptions.IgnoreCase)
+            : value.Contains(term, StringComparison.Ordinal)) ? "ai" : "platform";
+    }
+
+    private static string DisplayConceptFamily(string name)
+    {
+        var normalized = Regex.Replace(name.Trim(), @"\s+", " ");
+        if (normalized.Equals(".NET Core", StringComparison.OrdinalIgnoreCase)) return ".NET";
+        if (normalized.Equals("ASP.NET", StringComparison.OrdinalIgnoreCase)) return "ASP.NET Core";
+        return normalized;
+    }
+
     private static IReadOnlyDictionary<string, HashSet<string>> BuildConceptTerms(IEnumerable<JobMlConcept> concepts) =>
         concepts.ToDictionary(x => x.Id,
             x => new[] { x.Id, x.Name }.Concat(x.Aliases).Where(v => !string.IsNullOrWhiteSpace(v)).ToHashSet(StringComparer.OrdinalIgnoreCase),
             StringComparer.OrdinalIgnoreCase);
 
     private static List<CompilerRequirement> BuildRequirements(
-        IReadOnlyList<string> required, IReadOnlyList<string> preferred, IReadOnlyList<string> responsibilities)
+        IReadOnlyList<string> required, IReadOnlyList<string> preferred, IReadOnlyList<string> responsibilities,
+        string? requiredEducation)
     {
-        var all = required.Select(x => (x, RequirementKind.Required))
-            .Concat(preferred.Select(x => (x, RequirementKind.Preferred)))
-            .Concat(responsibilities.Select(x => (x, RequirementKind.Responsibility)))
-            .Where(x => !string.IsNullOrWhiteSpace(x.x)).DistinctBy(x => x.x, StringComparer.OrdinalIgnoreCase);
-        return all.Select((x, i) => new CompilerRequirement($"req-{i + 1}", x.x.Trim(), x.Item2, x.x.Trim())).ToList();
+        var all = required.Select(x => (Text: x, Kind: RequirementKind.Required))
+            .Concat(preferred.Select(x => (Text: x, Kind: RequirementKind.Preferred)))
+            .Concat(responsibilities.Select(x => (Text: x, Kind: RequirementKind.Responsibility)))
+            .Concat(string.IsNullOrWhiteSpace(requiredEducation)
+                ? []
+                : new[] { (Text: requiredEducation, Kind: RequirementKind.Required) })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Text)).DistinctBy(x => x.Text, StringComparer.OrdinalIgnoreCase);
+        return all.Select((x, i) => new CompilerRequirement($"req-{i + 1}", x.Text.Trim(), x.Kind, x.Text.Trim())).ToList();
     }
 
     private static List<CompilerRequirement> ExtractFallbackRequirements(string text) =>

@@ -178,6 +178,8 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Contains("/api/export/", payload);
 
         using var json = JsonDocument.Parse(payload);
+        Assert.Equal("Head of Engineering",
+            json.RootElement.GetProperty("manifest").GetProperty("targetTitle").GetString());
         var publishedMarkdown = json.RootElement.GetProperty("publishedMarkdown").GetString()!;
         var fullRecordUri = $"http://localhost/lucidresume/api/jobml/{revision}";
         Assert.Contains($"Full JobML: <{fullRecordUri}>", publishedMarkdown);
@@ -189,6 +191,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         using var documentReader = new StreamReader(archive.GetEntry("word/document.xml")!.Open());
         var documentXml = await documentReader.ReadToEndAsync();
         Assert.Contains(prose, documentXml);
+        Assert.Contains("Target role: Head of Engineering", documentXml);
         using var relationshipsReader = new StreamReader(
             archive.GetEntry("word/_rels/document.xml.rels")!.Open());
         var relationshipsXml = await relationshipsReader.ReadToEndAsync();

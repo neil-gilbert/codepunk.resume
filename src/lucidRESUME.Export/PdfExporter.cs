@@ -119,6 +119,26 @@ public sealed class PdfExporter : IResumeExporter
                 col.Item().PaddingBottom(6);
             }
 
+            if (resume.Projects.Count > 0)
+            {
+                for (var projectIndex = 0; projectIndex < resume.Projects.Count; projectIndex++)
+                {
+                    var proj = resume.Projects[projectIndex];
+                    col.Item().ShowEntire().SemanticSection().Column(projectColumn =>
+                    {
+                        if (projectIndex == 0)
+                            projectColumn.Item().Element(c => SectionHeading(c, "Selected Engineering", template));
+                        projectColumn.Item().SemanticHeading3().Text(proj.Name).Bold().FontSize(9);
+                        if (!string.IsNullOrWhiteSpace(proj.Description))
+                            CitedText(projectColumn.Item(), proj.Description, compact, template, 8, 1.15f);
+                        if (proj.Technologies.Count > 0)
+                            projectColumn.Item().SemanticParagraph().Text(string.Join(", ", proj.Technologies))
+                                .FontSize(8).Italic().FontColor($"#{template.AccentHex}");
+                        projectColumn.Item().PaddingBottom(4);
+                    });
+                }
+            }
+
             // Experience
             if (resume.Experience.Count > 0)
             {
@@ -203,27 +223,6 @@ public sealed class PdfExporter : IResumeExporter
                     col.Item().SemanticParagraph().Text($"{c.Name} — {c.Issuer}" +
                         (c.IssuedDate.HasValue ? $" ({c.IssuedDate.Value.Year})" : "")).FontSize(9);
                 col.Item().PaddingBottom(6);
-            }
-
-            // Projects
-            if (resume.Projects.Count > 0)
-            {
-                for (var projectIndex = 0; projectIndex < resume.Projects.Count; projectIndex++)
-                {
-                    var proj = resume.Projects[projectIndex];
-                    col.Item().ShowEntire().SemanticSection().Column(projectColumn =>
-                    {
-                        if (projectIndex == 0)
-                            projectColumn.Item().Element(c => SectionHeading(c, "Projects", template));
-                        projectColumn.Item().SemanticHeading3().Text(proj.Name).Bold().FontSize(9);
-                        if (!string.IsNullOrWhiteSpace(proj.Description))
-                            CitedText(projectColumn.Item(), proj.Description, compact, template, 8, 1.15f);
-                        if (proj.Technologies.Count > 0)
-                            projectColumn.Item().SemanticParagraph().Text(string.Join(", ", proj.Technologies))
-                                .FontSize(8).Italic().FontColor($"#{template.AccentHex}");
-                        projectColumn.Item().PaddingBottom(4);
-                    });
-                }
             }
 
             AppendReferences(col, compact, template);

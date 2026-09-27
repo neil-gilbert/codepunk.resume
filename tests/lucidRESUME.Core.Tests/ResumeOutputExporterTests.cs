@@ -117,6 +117,30 @@ public sealed class ResumeOutputExporterTests
     }
 
     [Fact]
+    public async Task Human_exports_keep_selected_engineering_before_employment_history()
+    {
+        var resume = CreateResume(ResumeTemplateCatalog.AtsClassicId);
+        resume.Projects.Add(new Project
+        {
+            Name = "Evidence Compiler",
+            Description = "Compiled reviewed evidence into a role-specific projection."
+        });
+
+        var docx = await new DocxExporter().ExportAsync(resume);
+        using var docxStream = new MemoryStream(docx);
+        using var document = WordprocessingDocument.Open(docxStream, false);
+        var docxText = document.MainDocumentPart!.Document!.Body!.InnerText;
+        var pdf = await new PdfExporter().ExportAsync(resume);
+        using var pdfDocument = PdfDocument.Open(pdf);
+        var pdfText = string.Join("\n", pdfDocument.GetPages().Select(page => page.Text));
+
+        Assert.True(docxText.IndexOf("Selected Engineering", StringComparison.Ordinal) <
+                    docxText.IndexOf("Experience", StringComparison.Ordinal));
+        Assert.True(pdfText.IndexOf("Selected Engineering", StringComparison.Ordinal) <
+                    pdfText.IndexOf("Experience", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task MarkdownExport_ReturnsOnePassParseableCJobMlProjection()
     {
         var resume = CreateResume(ResumeTemplateCatalog.AtsClassicId);

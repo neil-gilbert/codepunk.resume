@@ -96,12 +96,17 @@ public static class EndpointRouteBuilderExtensions
         var routeBase = requestPath.EndsWith(compileSuffix, StringComparison.OrdinalIgnoreCase)
             ? requestPath[..^compileSuffix.Length]
             : "/lucidresume";
+        var requestBaseUri = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}{routeBase}";
+        var publicBaseUri = Uri.TryCreate(configured.Value.PublicBaseUri, UriKind.Absolute, out var configuredUri) &&
+                            configuredUri.Scheme is "http" or "https"
+            ? configuredUri.ToString().TrimEnd('/')
+            : requestBaseUri;
         var result = await compiler.CompileAsync(snapshot, request.JobDescription,
             new CompilationOptions
             {
                 ComposeProse = request.Polish,
                 CompositionProvider = request.Provider,
-                FullJobMlUri = $"{context.Request.Scheme}://{context.Request.Host}{context.Request.PathBase}{routeBase}/api/jobml/{snapshot.Revision}"
+                FullJobMlUri = $"{publicBaseUri}/api/jobml/{snapshot.Revision}"
             }, ct);
         sessions.Put(result, TimeSpan.FromMinutes(configured.Value.CompilationCacheMinutes));
         var markdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().DisableHtml().Build();
@@ -164,6 +169,7 @@ public static class EndpointRouteBuilderExtensions
         resume.CanonicalMarkdown = result.HumanMarkdown;
         resume.JobMlSource = result.FullJobMlMarkdown;
         resume.JobMlRevision = result.Manifest.SourceRevision;
+        resume.TargetRole = result.Manifest.TargetTitle;
         MarkdownSectionParser.PopulateSections(resume, result.HumanMarkdown);
         PopulateProjectionSections(resume, result.ProjectedJobMl);
         var exporter = exporters.Single(x => x.Format == parsedFormat);

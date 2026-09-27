@@ -46,7 +46,10 @@ public sealed record ProjectionManifest(
     IReadOnlyList<EvidencePacket> Sections,
     IReadOnlyList<ClaimMatch> Matches,
     IReadOnlyList<string> Gaps,
-    string EmbeddingProvider);
+    string EmbeddingProvider)
+{
+    public string? TargetTitle { get; init; }
+}
 
 public sealed record CompositionBlock(
     string SectionId,
@@ -79,9 +82,10 @@ public interface IResumeCompositionProvider
 public sealed class CompilationOptions
 {
     public int MaximumClaims { get; set; } = 12;
-    public int MaximumClaimsPerSubject { get; set; } = 3;
+    public int MaximumClaimsPerSubject { get; set; } = 2;
     public int MaximumSections { get; set; } = 6;
-    public int MinimumExperienceSections { get; set; } = 4;
+    public int MinimumExperienceSections { get; set; } = 5;
+    public int MinimumProjectSections { get; set; } = 2;
     public double RelatedThreshold { get; set; } = 0.56;
     public double DiversityPenalty { get; set; } = 0.18;
     public bool ComposeProse { get; set; }

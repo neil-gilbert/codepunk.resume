@@ -198,8 +198,11 @@ accepts a job description, and returns a shorter evidence-bounded projection wit
 Markdown, Word, and PDF downloads. The application career ledger remains the
 canonical source; the published JobML document is its portable projection.
 OpenAI is the default interactive editor. The local LLamaSharp path batches the
-whole projection for coherence and can recover complete section objects from a
-truncated response without accepting an incomplete edit.
+projection in ordered groups of three and can recover complete section objects
+from a truncated response without accepting an incomplete edit. The compiler
+keeps the reviewed summary outside model editing, orders experience in reverse
+chronology, and deterministically adds the detected target title, canonical
+evidence-backed skills, role-relevant projects, and reviewed education.
 
 ![JobML web compiler rendering an evidence-linked projection](docs/screenshots/jobml-web-compiler.png)
 

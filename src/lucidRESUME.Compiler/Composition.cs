@@ -7,7 +7,11 @@ public sealed class CompositionValidator
     private static readonly Regex Number = new(@"(?<![\w-])\d+(?:[.,]\d+)*(?:%|x|\+)?", RegexOptions.Compiled);
     private static readonly Regex Word = new(@"[\p{L}\p{N}][\p{L}\p{N}+#.-]{2,}", RegexOptions.Compiled);
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
-        { "and", "the", "with", "from", "that", "this", "for", "into", "through", "role", "have", "must", "will", "your", "their", "our" };
+        {
+            "and", "the", "with", "from", "that", "this", "for", "into", "through", "role", "have",
+            "must", "will", "your", "their", "our", "using", "across", "including", "alongside", "while",
+            "within", "between"
+        };
 
     public IReadOnlyList<string> Validate(
         CompositionDraft draft,
@@ -33,8 +37,10 @@ public sealed class CompositionValidator
                 errors.Add($"Section '{block.SectionId}' changed the selected evidence identities.");
             if (string.IsNullOrWhiteSpace(block.Text))
                 errors.Add($"Section '{block.SectionId}' returned empty prose.");
-            var allowedNumbers = Number.Matches(original.Text).Select(x => x.Value).ToHashSet(StringComparer.Ordinal);
-            var introduced = Number.Matches(block.Text).Select(x => x.Value).Where(x => !allowedNumbers.Contains(x)).Distinct();
+            var allowedNumbers = Number.Matches(original.Text).Select(x => CanonicalNumber(x.Value))
+                .ToHashSet(StringComparer.Ordinal);
+            var introduced = Number.Matches(block.Text).Select(x => x.Value)
+                .Where(x => !allowedNumbers.Contains(CanonicalNumber(x))).Distinct();
             foreach (var value in introduced) errors.Add($"Section '{block.SectionId}' introduced numeric fact '{value}'.");
             var selectedClaims = packet.Claims.Where(x => original.ClaimIds.Contains(x.Claim.Id, StringComparer.OrdinalIgnoreCase));
             var allowedFacts = Words(original.Text + " " + string.Join(' ', selectedClaims.SelectMany(x =>
@@ -55,8 +61,27 @@ public sealed class CompositionValidator
 
     private static int WordCount(string value) =>
         Regex.Matches(value, @"\b[\p{L}\p{N}][\p{L}\p{N}'’-]*\b").Count;
+    private static string CanonicalNumber(string value) => value.Replace(",", string.Empty, StringComparison.Ordinal);
     private static HashSet<string> Words(string value) => Word.Matches(value)
-        .Select(x => x.Value.ToLowerInvariant()).Where(x => !StopWords.Contains(x)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        .Select(x => CanonicalWord(x.Value)).Where(x => !StopWords.Contains(x)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static string CanonicalWord(string value) => value.ToLowerInvariant() switch
+    {
+        "led" => "lead",
+        "teams" => "team",
+        "engineers" => "engineer",
+        "systems" => "system",
+        "services" => "service",
+        "applications" => "application",
+        "products" => "product",
+        "models" => "model",
+        "tools" => "tool",
+        "workflows" => "workflow",
+        "releases" => "release",
+        "standards" => "standard",
+        "delivers" or "delivered" or "delivery" => "deliver",
+        _ => value.ToLowerInvariant()
+    };
 }
 
 public sealed class ResumeCompositionOrchestrator(

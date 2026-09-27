@@ -52,7 +52,10 @@ public class ScriptModelTests
             ActionType.Wait,
             ActionType.Navigate,
             ActionType.Screenshot,
-            ActionType.Assert
+            ActionType.Assert,
+            ActionType.Svg,
+            ActionType.ImportFile,
+            ActionType.PasteJob
         };
         
         Assert.That(Enum.GetValues<ActionType>(), Is.EquivalentTo(expectedTypes));

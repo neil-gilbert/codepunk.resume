@@ -76,6 +76,26 @@ public sealed class DocxExporter : IResumeExporter
                 }
             }
 
+            // Role-relevant engineering work is selected before employment by the
+            // compiler, so preserve that emphasis in conventional exports too.
+            if (resume.Projects.Count > 0)
+            {
+                body.Append(CreateParagraph("Selected Engineering", "Heading2"));
+                foreach (var proj in resume.Projects)
+                {
+                    body.Append(CreateParagraph(proj.Name, bold: true));
+                    if (!string.IsNullOrWhiteSpace(proj.Description))
+                    {
+                        var paragraph = CreateParagraph(proj.Description, fontSize: 20);
+                        AppendCitationMarkers(paragraph, ExportArtifact.CitationNumbers(proj.Description, compact));
+                        body.Append(paragraph);
+                    }
+                    if (proj.Technologies.Count > 0)
+                        body.Append(CreateParagraph(string.Join(", ", proj.Technologies), fontSize: 18,
+                            color: template.AccentHex, fontFamily: template.FontFamily));
+                }
+            }
+
             // --- Experience ---
             if (resume.Experience.Count > 0)
             {
@@ -132,24 +152,6 @@ public sealed class DocxExporter : IResumeExporter
                 body.Append(CreateParagraph("Certifications", "Heading2"));
                 foreach (var c in resume.Certifications)
                     body.Append(CreateBullet($"{c.Name} — {c.Issuer}" + (c.IssuedDate.HasValue ? $" ({c.IssuedDate.Value.Year})" : "")));
-            }
-
-            // --- Projects ---
-            if (resume.Projects.Count > 0)
-            {
-                body.Append(CreateParagraph("Projects", "Heading2"));
-                foreach (var proj in resume.Projects)
-                {
-                    body.Append(CreateParagraph(proj.Name, bold: true));
-                    if (!string.IsNullOrWhiteSpace(proj.Description))
-                    {
-                        var paragraph = CreateParagraph(proj.Description, fontSize: 20);
-                        AppendCitationMarkers(paragraph, ExportArtifact.CitationNumbers(proj.Description, compact));
-                        body.Append(paragraph);
-                    }
-                    if (proj.Technologies.Count > 0)
-                        body.Append(CreateParagraph(string.Join(", ", proj.Technologies), fontSize: 18, color: template.AccentHex, fontFamily: template.FontFamily));
-                }
             }
 
             AppendReferences(mainPart, body, compact, template);

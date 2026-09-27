@@ -16,4 +16,9 @@ public sealed class JobMlCompilerOptions
     public int CompilationCacheMinutes { get; set; } = 30;
     public string EmbeddingProviderName { get; set; } = "local-onnx";
     public bool RequireAuthenticatedWriter { get; set; } = true;
+    /// <summary>
+    /// Optional externally reachable compiler base URI, for example
+    /// https://example.com/lucidresume. When omitted, request scheme and host are used.
+    /// </summary>
+    public string? PublicBaseUri { get; set; }
 }

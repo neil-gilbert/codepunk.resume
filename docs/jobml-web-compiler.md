@@ -57,14 +57,24 @@ enabled, the orchestrator runs two edits:
 
 Both passes receive the immutable source blocks as well as the current draft.
 They receive only the requirements already matched to each selected section, not
-the full untrusted vacancy as a source of candidate facts. The local grug provider
-edits the selected sections as one batch so it can see the document's overall
-shape. If its JSON output is truncated, only independently complete section
-objects are recovered. After every pass, validation accepts or rejects each
+the full untrusted vacancy as a source of candidate facts. The local provider
+edits ordered batches of three sections, carrying the target role and preceding
+section identifiers as document context. This is small enough for the bundled
+model to finish reliably without reducing every edit to an isolated sentence.
+If its JSON output is truncated, only independently complete section objects are
+recovered. After every pass, validation accepts or rejects each
 section independently. Unknown sections, changed claim or evidence identities,
 invented numbers, unsupported vacancy terminology, and over-budget text are
 discarded. Each rejected or incomplete section retains its last valid
 human-based version.
+
+The human projection remains conventional as well as evidence-aware. It prints
+the detected target title, a compact `Core Skills` index containing only
+canonical concepts attached to claims that survive into the rendered projection,
+reverse-chronological experience, role-relevant projects, and reviewed education.
+The vacancy may rank the skills index but cannot contribute its vocabulary.
+Senior role titles give a bounded preference to accepted productisation evidence,
+while hands-on roles continue to favour implementation evidence.
 
 This is a projection with optional bounded editing, not generation from a blank
 prompt.
@@ -94,6 +104,7 @@ Minimal configuration:
     "MaximumUploadBytes": 16777216,
     "MaximumJobDescriptionBytes": 262144,
     "CompilationCacheMinutes": 30,
+    "PublicBaseUri": "https://careers.example.com/lucidresume",
     "RequireAuthenticatedWriter": true
   },
   "Tailoring": { "Provider": "llamasharp" },
@@ -102,6 +113,11 @@ Minimal configuration:
   }
 }
 ```
+
+Set `PublicBaseUri` when downloads are compiled behind a reverse proxy or on a
+developer machine. cJobML citations then point at the externally reachable,
+content-addressed career-record endpoint instead of `localhost`. If it is omitted,
+the request scheme, host and mapped route are used.
 
 OpenAI is optional. Configure `OpenAi:ApiKey` through server-side configuration
 or secrets, never browser JavaScript or a checked-in settings file. The OpenAI
