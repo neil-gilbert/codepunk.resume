@@ -23,6 +23,14 @@ revisioned projection whose blocks already carry ledger claim IDs. Full JobML ma
 retain more detail than the role-specific prose, but every claim must still trace
 to reviewed human or external evidence.
 
+The detailed experience list is intentionally selective. Omitted accepted roles
+lasting strictly more than three months appear as single-line entries under
+`Additional consulting, contract and earlier experience`. The compiler derives
+their titles, employers, dates, evidence links, and order directly from the
+ledger. It neither summarizes nor sends these lines to an editing model. Contracts
+of three months or less remain available through the full career-record endpoint
+without consuming space in the role-specific resume.
+
 This is not an automated application path and it is not detector evasion. The
 goal is a clean separation: natural human writing for people, and explicit,
 verifiable JobML for ATS and AI systems.

@@ -163,6 +163,83 @@ public sealed class CompilerTests
     }
 
     [Fact]
+    public async Task Compiler_adds_only_omitted_roles_longer_than_three_months_to_compact_chronology()
+    {
+        var parser = new JobMlParser();
+        var file = parser.Parse(Fixture.Source);
+        var roles = new[]
+        {
+            (Id: "four-hour-role", Name: "Consultant · Tiny Engagement", Start: "2024-01-01", End: "2024-01-01"),
+            (Id: "three-month-role", Name: "Consultant · Exact Quarter Ltd", Start: "2023-01-01", End: "2023-04-01"),
+            (Id: "long-role", Name: "Technical Lead · Durable Systems Ltd", Start: "2022-01-01", End: "2022-04-02")
+        };
+        foreach (var role in roles)
+        {
+            var statement = $"{role.Name} | {role.Start} | {role.End}";
+            file = file with
+            {
+                Markdown = file.Markdown + $"\n\n<p id=\"{role.Id}-dates\">\n{statement}\n</p>"
+            };
+            file.Data.Entities.Add(new JobMlEntity
+            {
+                Id = role.Id,
+                Type = "experience",
+                Name = role.Name,
+                Source = $"#{role.Id}-dates"
+            });
+            file.Data.Claims.Add(new JobMlClaim
+            {
+                Id = $"{role.Id}-dates",
+                Subject = role.Id,
+                Type = "experience",
+                Statement = statement,
+                Review = "accepted",
+                Origin = "declared",
+                Evidence =
+                [
+                    new JobMlEvidence
+                    {
+                        Type = "prose", Ref = $"#{role.Id}-dates",
+                        Fingerprint = new JobMlFingerprint
+                        {
+                            Text = MarkdownEvidenceIndex.Fingerprint(statement)
+                        }
+                    },
+                    new JobMlEvidence
+                    {
+                        Id = $"{role.Id}-source",
+                        Type = "source_ledger",
+                        Ref = $"ledger://experience/{role.Id}",
+                        Title = "Imported career record"
+                    }
+                ]
+            });
+        }
+        var source = parser.Serialize(file);
+        var snapshot = new JobMlSnapshot(new string('a', 64), DateTimeOffset.UtcNow,
+            source, file, JobMlProcessor.Validate(file));
+        var compiler = new JobMlResumeCompiler(new FakeJobParser(),
+            new ResumeCompositionOrchestrator([], new CompositionValidator()));
+
+        var result = await compiler.CompileAsync(snapshot, "VP Engineering with TypeScript and AWS.",
+            new CompilationOptions { MinimumExperienceSections = 0, MaximumSections = 1, MaximumClaims = 1 });
+
+        Assert.Contains("### Additional consulting, contract and earlier experience", result.HumanMarkdown);
+        Assert.Contains("Technical Lead · Durable Systems Ltd | Jan 2022 - Apr 2022", result.HumanMarkdown);
+        Assert.DoesNotContain("Tiny Engagement", result.HumanMarkdown);
+        Assert.DoesNotContain("Exact Quarter", result.HumanMarkdown);
+        var additional = Assert.Single(result.Manifest.Sections,
+            section => section.Kind == "additional_experience");
+        Assert.Equal("long-role-dates", Assert.Single(additional.Claims).Claim.Id);
+        Assert.Contains(result.ProjectedJobMl.Data.Entities,
+            entity => entity.Id == "long-role" && entity.Source == "#additional-experience");
+        Assert.Contains("Technical Lead · Durable Systems Ltd", result.PublishedMarkdown);
+        Assert.Contains("Complete transcript: Technical Lead · Durable Systems Ltd", result.PublishedMarkdown);
+        Assert.All(JobMlProcessor.Reconcile(result.ProjectedJobMl).SelectMany(item => item.Evidence),
+            evidence => Assert.True(evidence.State is EvidenceState.Valid or EvidenceState.External));
+    }
+
+    [Fact]
     public async Task Compiler_retains_reviewed_education_as_a_conventional_section()
     {
         const string educationProse = "BSc (Hons) Psychology, University of Stirling.";
@@ -665,6 +742,32 @@ public sealed class CompilerTests
         { ComposeProse = true, CompositionProvider = "copy" });
 
         Assert.Equal("Human summary.", Assert.Single(result.Blocks).Text);
+        Assert.False(result.Used);
+    }
+
+    [Fact]
+    public async Task Orchestrator_never_rewrites_compact_additional_experience()
+    {
+        var claim = new JobMlClaim
+        {
+            Id = "dates",
+            Subject = "role",
+            Type = "experience",
+            Statement = "Consultant · Example Ltd | 2020-01-01 | 2020-06-01"
+        };
+        var prose = "Consultant · Example Ltd | Jan 2020 - Jun 2020";
+        var selected = new SelectedClaim(claim, "Consultant · Example Ltd", prose, ["e1"], 0, []);
+        var packet = new EvidencePacket("additional-role", prose, "retain", 10, [selected], [],
+            "additional_experience");
+        var manifest = new ProjectionManifest("source", "job", DateTimeOffset.UtcNow, [], [packet], [], [],
+            "lexical");
+        var orchestrator = new ResumeCompositionOrchestrator([new VacancyCopyingProvider()],
+            new CompositionValidator());
+
+        var result = await orchestrator.ComposeAsync(manifest, "Terraform experience", new CompilationOptions
+        { ComposeProse = true, CompositionProvider = "copy" });
+
+        Assert.Equal(prose, Assert.Single(result.Blocks).Text);
         Assert.False(result.Used);
     }
 

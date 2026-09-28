@@ -218,7 +218,7 @@ public static class EndpointRouteBuilderExtensions
                 Entity = entity,
                 Claims = claims,
                 Passages = passages,
-                Packet = ProjectionPacket(entity.Source, packetsBySection),
+                Packet = ProjectionPacket(entity.Source, claims, packetsBySection),
                 Start = passages.FirstOrDefault()?.SourceStart ?? int.MaxValue
             };
         }).OrderBy(item => item.Start);
@@ -254,7 +254,9 @@ public static class EndpointRouteBuilderExtensions
             {
                 Title = role[0],
                 Company = role.Length > 1 ? role[1] : null,
-                Achievements = [prose]
+                Achievements = [prose],
+                IsCompact = item.Packet?.Kind.Equals("additional_experience",
+                    StringComparison.OrdinalIgnoreCase) == true
             };
             ApplyManifestDateRange(experience, item.Packet?.Heading);
             resume.Experience.Add(experience);
@@ -262,11 +264,18 @@ public static class EndpointRouteBuilderExtensions
     }
 
     private static EvidencePacket? ProjectionPacket(string? source,
+        IReadOnlyList<lucidRESUME.JobML.JobMlClaim> claims,
         IReadOnlyDictionary<string, EvidencePacket> packetsBySection)
     {
-        if (string.IsNullOrWhiteSpace(source)) return null;
-        var sectionId = source.Trim().TrimStart('#').Split(':', 2)[0];
-        return packetsBySection.GetValueOrDefault(sectionId);
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            var sectionId = source.Trim().TrimStart('#').Split(':', 2)[0];
+            if (packetsBySection.TryGetValue(sectionId, out var sourced)) return sourced;
+        }
+
+        var claimIds = claims.Select(claim => claim.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return packetsBySection.Values.FirstOrDefault(packet =>
+            packet.Claims.Any(item => claimIds.Contains(item.Claim.Id)));
     }
 
     private static void ApplyManifestDateRange(WorkExperience experience, string? heading)

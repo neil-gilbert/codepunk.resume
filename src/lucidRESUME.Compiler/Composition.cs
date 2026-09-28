@@ -107,7 +107,8 @@ public sealed class ResumeCompositionOrchestrator(
 
         IReadOnlyList<CompositionBlock> current = source;
         var editableSectionIds = manifest.Sections
-            .Where(section => !section.Kind.Equals("summary", StringComparison.OrdinalIgnoreCase))
+            .Where(section => !section.Kind.Equals("summary", StringComparison.OrdinalIgnoreCase) &&
+                              !section.Kind.Equals("additional_experience", StringComparison.OrdinalIgnoreCase))
             .Select(section => section.SectionId)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (editableSectionIds.Count == 0) return (source, false, null, []);

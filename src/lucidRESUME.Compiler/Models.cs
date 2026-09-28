@@ -88,6 +88,10 @@ public sealed class CompilationOptions
     public int MinimumProjectSections { get; set; } = 2;
     public double RelatedThreshold { get; set; } = 0.56;
     public double DiversityPenalty { get; set; } = 0.18;
+    /// <summary>Include qualifying roles omitted from the detailed projection as a compact chronology.</summary>
+    public bool IncludeAdditionalExperience { get; set; } = true;
+    /// <summary>Roles must be strictly longer than this many calendar months to enter the compact chronology.</summary>
+    public int MinimumAdditionalExperienceMonths { get; set; } = 3;
     public bool ComposeProse { get; set; }
     public string? CompositionProvider { get; set; }
     /// <summary>Published endpoint for the full JobML career-record projection.</summary>

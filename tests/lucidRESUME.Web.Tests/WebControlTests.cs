@@ -93,9 +93,13 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
             .Groups["token"].Value;
         const string prose = "Led a TypeScript engineering team through platform change on AWS.";
         const string employmentDates = "Engineering Lead · Example Ltd | 2022-01-01 | Present";
+        const string additionalDates = "Technical Consultant · Earlier Ltd | 2018-01-01 | 2018-05-01";
+        const string exactQuarterDates = "Short Consultant · Brief Ltd | 2017-01-01 | 2017-04-01";
         const string education = "BSc (Hons) Computer Science | Example University";
         var fingerprint = MarkdownEvidenceIndex.Fingerprint(prose);
         var dateFingerprint = MarkdownEvidenceIndex.Fingerprint(employmentDates);
+        var additionalDateFingerprint = MarkdownEvidenceIndex.Fingerprint(additionalDates);
+        var exactQuarterDateFingerprint = MarkdownEvidenceIndex.Fingerprint(exactQuarterDates);
         var educationFingerprint = MarkdownEvidenceIndex.Fingerprint(education);
         var source = $$"""
             # Jane Smith
@@ -108,6 +112,18 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
 
             <p id="employment-dates">
             {{employmentDates}}
+            </p>
+
+            ## Earlier Ltd {#earlier-role}
+
+            <p id="earlier-dates">
+            {{additionalDates}}
+            </p>
+
+            ## Brief Ltd {#brief-role}
+
+            <p id="brief-dates">
+            {{exactQuarterDates}}
             </p>
 
             ## Education {#example-education}
@@ -139,6 +155,14 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
                 type: education
                 name: {{education}}
                 source: "#example-education"
+              - id: earlier-role
+                type: experience
+                name: Technical Consultant · Earlier Ltd
+                source: "#earlier-role"
+              - id: brief-role
+                type: experience
+                name: Short Consultant · Brief Ltd
+                source: "#brief-role"
             claims:
               - id: leadership
                 subject: example-role
@@ -181,6 +205,34 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
                     ref: "#degree"
                     fingerprint:
                       text: "{{educationFingerprint}}"
+              - id: earlier-role-dates
+                subject: earlier-role
+                type: experience
+                statement: {{additionalDates}}
+                origin: declared
+                review: accepted
+                concepts: {}
+                supported_by:
+                  - type: prose
+                    ref: "#earlier-dates"
+                    fingerprint:
+                      text: "{{additionalDateFingerprint}}"
+                  - id: imported-earlier-role
+                    type: source_ledger
+                    ref: ledger://experience/earlier-role
+                    title: Imported career record
+              - id: brief-role-dates
+                subject: brief-role
+                type: experience
+                statement: {{exactQuarterDates}}
+                origin: declared
+                review: accepted
+                concepts: {}
+                supported_by:
+                  - type: prose
+                    ref: "#brief-dates"
+                    fingerprint:
+                      text: "{{exactQuarterDateFingerprint}}"
             concepts:
               - id: typescript
                 type: skill
@@ -235,6 +287,11 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Contains(prose, documentXml);
         Assert.Contains("Target role: Head of Engineering", documentXml);
         Assert.Contains("Jan 2022 – Present", documentXml);
+        Assert.Contains("Additional consulting, contract and earlier experience", documentXml);
+        Assert.Contains("Technical Consultant", documentXml);
+        Assert.Contains("Earlier Ltd", documentXml);
+        Assert.Contains("Jan 2018 – May 2018", documentXml);
+        Assert.DoesNotContain("Brief Ltd", documentXml);
         Assert.Contains("BSc (Hons) Computer Science — Example University", documentXml);
         Assert.Matches(@"BSc \(Hons\) Computer Science — Example University.*?\[\d+\]", documentXml);
         using var relationshipsReader = new StreamReader(

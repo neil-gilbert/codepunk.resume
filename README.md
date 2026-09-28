@@ -39,7 +39,11 @@ OpenAI. The deterministic planner first fits complete source sentences to a
 compact per-section budget. Model edits are then accepted section by section;
 any edit that changes claim or evidence identity, invents a number, borrows an
 unsupported vacancy term, or exceeds its budget falls back to the valid human
-selection. The result exports as one
+selection. Detailed experience remains selective. Accepted roles omitted from the
+detailed projection are preserved in a compact end-of-experience chronology when
+they lasted more than three months; shorter engagements are left in the complete
+career record. Chronology lines are deterministic ledger projections and never go
+through a prose-editing model. The result exports as one
 evidence-linked artifact in Markdown, Word, or PDF. Published documents use
 inline numbered citations and a compact cJobML References section. A citation can
 open the exact role or project in the published full career transcript. Full
@@ -446,22 +450,23 @@ lucidRESUME (Avalonia UI: My CV, JobML Editor, My Data, Career, Jobs, Add Job, P
 ## Tests
 
 ```bash
-dotnet test lucidRESUME.sln    # 442 tests across 12 projects
+dotnet test lucidRESUME.sln    # 496 tests across 13 projects
 ```
 
 | Project | Tests | Coverage |
 |---------|-------|----------|
-| Core.Tests | 91 | Persistence, models, multi-resume, export, linked posts |
+| Core.Tests | 92 | Persistence, models, multi-resume, export, linked posts |
 | Extraction.Tests | 25 | NER, recognizers, RRF fusion pipeline |
-| AI.Tests | 45 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
+| AI.Tests | 46 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
 | Matching.Tests | 58 | Skill scoring, filters, voting, projection quality |
 | JobSpec.Tests | 15 | JD parsing, salary extraction |
 | EmailTracker.Tests | 25 | Classifier, matcher |
 | GitHub.Tests | 37 | Language map, repository assessment, package families, LinkedIn parsing, document merge |
 | JobML.Tests | 29 | Parsing, validation, drift, reversible links, cJobML projection |
-| Compiler.Tests | 12 | Deterministic evidence selection and projection orchestration |
+| Compiler.Tests | 24 | Deterministic evidence selection, compact chronology and projection orchestration |
 | Web.Tests | 5 | ASP.NET Core endpoint and projection control |
 | App.Tests | 2 | Native operating-system credential storage |
+| UXTesting.Tests | 40 | Acceptance commands, script loading and execution context |
 | Avalonia.UITesting.Tests | 98 | Input, scripts, locators, screenshots, REPL |
 
 The Chrome evidence filler has a separate TypeScript suite:

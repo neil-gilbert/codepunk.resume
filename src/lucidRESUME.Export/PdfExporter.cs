@@ -143,14 +143,22 @@ public sealed class PdfExporter : IResumeExporter
             if (resume.Experience.Count > 0)
             {
                 col.Item().Element(c => SectionHeading(c, "Experience", template));
+                var detailedExperienceCount = resume.Experience.Count(experience => !experience.IsCompact);
                 for (var experienceIndex = 0; experienceIndex < resume.Experience.Count; experienceIndex++)
                 {
-                    if (resume.Experience.Count >= 10 && experienceIndex == 7)
+                    if (detailedExperienceCount >= 10 && experienceIndex == 7)
                         col.Item().PageBreak();
                     var exp = resume.Experience[experienceIndex];
-                    col.Item().PaddingTop(experienceIndex == 0 ? 0 : 9).ShowEntire().SemanticSection().Column(experienceColumn =>
+                    if (exp.IsCompact && (experienceIndex == 0 || !resume.Experience[experienceIndex - 1].IsCompact))
+                        col.Item().PaddingTop(5).SemanticHeading3()
+                            .Text("Additional consulting, contract and earlier experience").Bold().FontSize(9);
+                    col.Item().PaddingTop(experienceIndex == 0 ? 0 : exp.IsCompact ? 3 : 9)
+                        .ShowEntire().SemanticSection().Column(experienceColumn =>
                     {
                         var dates = FormatDates(exp.StartDate, exp.EndDate, exp.IsCurrent);
+                        var compactCitations = exp.IsCompact
+                            ? ExportArtifact.CitationNumbers(exp.Achievements.FirstOrDefault() ?? string.Empty, compact)
+                            : [];
                         experienceColumn.Item().SemanticHeading3().Row(header =>
                         {
                             header.RelativeItem().Text(text =>
@@ -163,6 +171,13 @@ public sealed class PdfExporter : IResumeExporter
                                     text.Span(exp.Company).Bold().FontSize(9).FontColor($"#{template.AccentHex}");
                                 if (!string.IsNullOrWhiteSpace(exp.Location))
                                     text.Span($" | {exp.Location}").FontSize(8).FontColor(Colors.Grey.Medium);
+                                for (var citationIndex = 0; citationIndex < compactCitations.Count; citationIndex++)
+                                {
+                                    var number = compactCitations[citationIndex];
+                                    text.SectionLink(citationIndex == 0 ? $"\u00A0[{number}]" : $",\u00A0[{number}]",
+                                            $"ref-{number}")
+                                        .FontSize(8).FontColor($"#{template.AccentHex}").Underline();
+                                }
                             });
                             if (!string.IsNullOrEmpty(dates))
                                 header.ConstantItem(105).AlignRight().Text(dates).FontSize(8)
@@ -173,7 +188,7 @@ public sealed class PdfExporter : IResumeExporter
                             experienceColumn.Item().SemanticParagraph().Text(string.Join(", ", exp.Technologies))
                                 .FontSize(8).Italic().FontColor($"#{template.AccentHex}");
 
-                        if (exp.Achievements.Count > 0)
+                        if (!exp.IsCompact && exp.Achievements.Count > 0)
                             experienceColumn.Item().SemanticList().Column(list =>
                             {
                                 foreach (var achievement in exp.Achievements)

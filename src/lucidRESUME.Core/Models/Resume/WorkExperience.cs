@@ -11,6 +11,12 @@ public sealed class WorkExperience
     public bool IsCurrent { get; set; }
 
     /// <summary>
+    /// Render this ledger-backed role as a one-line chronology entry. Used for
+    /// qualifying roles omitted from the detailed, vacancy-specific projection.
+    /// </summary>
+    public bool IsCompact { get; set; }
+
+    /// <summary>
     /// Author-controlled publication preference. Career anchors are retained in every
     /// role-specific resume projection even when age or lexical similarity would
     /// otherwise push them outside the detailed-role budget.

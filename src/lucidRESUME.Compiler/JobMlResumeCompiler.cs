@@ -83,6 +83,13 @@ public sealed class JobMlResumeCompiler(
             .ThenByDescending(group => group.Max(item => item.Score))
             .Select((group, number) => BuildEvidencePacket(group, number, requirements, accepted))
             .ToList();
+        if (options.IncludeAdditionalExperience)
+        {
+            var additional = BuildAdditionalExperiencePackets(accepted, selected, entities,
+                options.MinimumAdditionalExperienceMonths, sections.Count);
+            sections.AddRange(additional);
+            selected.AddRange(additional.SelectMany(packet => packet.Claims));
+        }
         var gaps = requirements.Where(r => matches.All(m => m.RequirementId != r.Id || m.Kind == MatchKind.None))
             .Select(r => r.Text).ToList();
         var manifest = new ProjectionManifest(
@@ -101,7 +108,7 @@ public sealed class JobMlResumeCompiler(
         var composed = await composition.ComposeAsync(manifest, jobDescription, options, cancellationToken);
         var human = RenderHumanMarkdown(completeResume.File.Markdown, composed.Blocks, sections, job.Title,
             selected, completeResume.File.Data.Concepts, requirements);
-        var projected = BuildProjection(completeResume.File, human, composed.Blocks, selected,
+        var projected = BuildProjection(completeResume.File, human, composed.Blocks, sections, selected,
             options.FullJobMlUri);
         var full = JobMlArtifactComposer.Compose(projected);
         var published = CJobMlProjector.Project(projected).Markdown;
@@ -164,6 +171,82 @@ public sealed class JobMlResumeCompiler(
             claims,
             requirementIds,
             isSummary ? "summary" : isProject ? "project" : isEducation ? "education" : "experience");
+    }
+
+    private static IReadOnlyList<EvidencePacket> BuildAdditionalExperiencePackets(
+        IReadOnlyList<JobMlClaim> acceptedClaims,
+        IReadOnlyList<SelectedClaim> selected,
+        IReadOnlyDictionary<string, JobMlEntity> entities,
+        int minimumMonths,
+        int sectionOffset)
+    {
+        var selectedSubjects = selected.Select(item => item.Claim.Subject)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var candidates = acceptedClaims
+            .Where(claim => claim.Type == "experience" && !selectedSubjects.Contains(claim.Subject))
+            .Where(claim => entities.GetValueOrDefault(claim.Subject)?.Type == "experience")
+            .Select(claim => new
+            {
+                Claim = claim,
+                Entity = entities[claim.Subject],
+                Dates = ParseExperienceDates(claim.Statement)
+            })
+            .Where(item => item.Dates is not null &&
+                           LongerThanMonths(item.Dates.Value.Start, item.Dates.Value.End, minimumMonths))
+            .GroupBy(item => item.Claim.Subject, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(item => item.Dates!.Value.SortEnd).First())
+            .OrderByDescending(item => item.Dates!.Value.SortEnd)
+            .ThenByDescending(item => item.Dates!.Value.Start)
+            .ToList();
+
+        return candidates.Select((item, index) =>
+        {
+            var dates = item.Dates!.Value;
+            var heading = CompactHeading(item.Entity.Name);
+            var line = $"{heading} | {FormatExperienceDates(dates)}";
+            var selectedClaim = new SelectedClaim(item.Claim, heading, line,
+                item.Claim.Evidence.Select((evidence, evidenceIndex) =>
+                    evidence.Id ?? $"{item.Claim.Id}-e{evidenceIndex + 1}").ToList(),
+                0, []);
+            return new EvidencePacket(
+                $"section-{sectionOffset + index + 1}-additional-{Slug(item.Entity.Id)}",
+                line,
+                "Retain this accepted ledger chronology entry exactly. Do not rewrite it.",
+                WordCount(line),
+                [selectedClaim],
+                [],
+                "additional_experience");
+        }).ToList();
+    }
+
+    private static bool LongerThanMonths(DateOnly start, DateOnly? end, int months)
+    {
+        var effectiveEnd = end ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        return start.AddMonths(Math.Max(0, months)) < effectiveEnd;
+    }
+
+    private static (DateOnly Start, DateOnly? End, bool IsCurrent, DateOnly SortEnd)?
+        ParseExperienceDates(string statement)
+    {
+        var match = Regex.Match(statement,
+            @"\|\s*(?<start>\d{4}-\d{2}-\d{2})\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|Present)\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success || !DateOnly.TryParseExact(match.Groups["start"].Value, "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)) return null;
+        if (match.Groups["end"].Value.Equals("Present", StringComparison.OrdinalIgnoreCase))
+            return (start, null, true, DateOnly.MaxValue);
+        return DateOnly.TryParseExact(match.Groups["end"].Value, "yyyy-MM-dd",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out var end)
+            ? (start, end, false, end)
+            : null;
+    }
+
+    private static string FormatExperienceDates(
+        (DateOnly Start, DateOnly? End, bool IsCurrent, DateOnly SortEnd) dates)
+    {
+        var culture = CultureInfo.GetCultureInfo("en-GB");
+        var end = dates.IsCurrent ? "Present" : dates.End!.Value.ToString("MMM yyyy", culture);
+        return $"{dates.Start.ToString("MMM yyyy", culture)} - {end}";
     }
 
     private static List<SelectedClaim> FitHumanProse(
@@ -711,11 +794,17 @@ public sealed class JobMlResumeCompiler(
         string.Equals(entity.Projection?.Include, "always", StringComparison.OrdinalIgnoreCase);
 
     private static JobMlFile BuildProjection(JobMlFile source, string human,
-        IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<SelectedClaim> selected, string? fullJobMlUri)
+        IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<EvidencePacket> packets,
+        IReadOnlyList<SelectedClaim> selected, string? fullJobMlUri)
     {
         var effectiveFullJobMl = AbsoluteHttpUri(fullJobMlUri ?? source.Data.Document.EffectiveFullJobMl);
         var sourceEntities = source.Data.Entities.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
         var selectedById = selected.ToDictionary(x => x.Claim.Id, StringComparer.OrdinalIgnoreCase);
+        var packetsBySection = packets.ToDictionary(packet => packet.SectionId, StringComparer.OrdinalIgnoreCase);
+        var additionalParagraphs = blocks
+            .Where(block => packetsBySection.GetValueOrDefault(block.SectionId)?.Kind == "additional_experience")
+            .Select((block, index) => new { block.SectionId, Paragraph = index + 1 })
+            .ToDictionary(item => item.SectionId, item => item.Paragraph, StringComparer.OrdinalIgnoreCase);
         var claims = new List<JobMlClaim>();
         foreach (var block in blocks)
             foreach (var claimId in block.ClaimIds.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -723,11 +812,14 @@ public sealed class JobMlResumeCompiler(
                 if (!selectedById.TryGetValue(claimId, out var selectedClaim)) continue;
                 var original = selectedClaim.Claim;
                 var passageText = MarkdownEvidenceIndex.NormalizeText(block.Text);
+                var proseRef = additionalParagraphs.TryGetValue(block.SectionId, out var paragraph)
+                    ? $"#additional-experience:p{paragraph}"
+                    : $"#{block.SectionId}:p1";
                 var evidence = new List<JobMlEvidence>
             {
                 new()
                 {
-                    Id = $"projection-{block.SectionId}", Type = "prose", Ref = $"#{block.SectionId}:p1",
+                    Id = $"projection-{block.SectionId}", Type = "prose", Ref = proseRef,
                     Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(passageText) },
                     Selector = new JobMlTextSelector { Exact = passageText }
                 }
@@ -780,7 +872,7 @@ public sealed class JobMlResumeCompiler(
                 Id = x.Id,
                 Name = CompactHeading(x.Name),
                 Type = x.Type,
-                Source = $"#{blocks.First(b => b.ClaimIds.Any(id => selectedById.GetValueOrDefault(id)?.Claim.Subject.Equals(x.Id, StringComparison.OrdinalIgnoreCase) == true)).SectionId}",
+                Source = ProjectionEntitySource(x.Id, blocks, packetsBySection, selectedById),
                 Projection = x.Projection is null ? null : new JobMlProjectionPreference
                 {
                     Include = x.Projection.Include,
@@ -800,6 +892,19 @@ public sealed class JobMlResumeCompiler(
         return new JobMlFile(human, root);
     }
 
+    private static string ProjectionEntitySource(string entityId,
+        IReadOnlyList<CompositionBlock> blocks,
+        IReadOnlyDictionary<string, EvidencePacket> packetsBySection,
+        IReadOnlyDictionary<string, SelectedClaim> selectedById)
+    {
+        var block = blocks.First(candidate => candidate.ClaimIds.Any(id =>
+            selectedById.GetValueOrDefault(id)?.Claim.Subject.Equals(entityId,
+                StringComparison.OrdinalIgnoreCase) == true));
+        return packetsBySection.GetValueOrDefault(block.SectionId)?.Kind == "additional_experience"
+            ? "#additional-experience"
+            : $"#{block.SectionId}";
+    }
+
     private static string RenderHumanMarkdown(string completeMarkdown,
         IReadOnlyList<CompositionBlock> blocks, IReadOnlyList<EvidencePacket> packets, string? targetTitle,
         IReadOnlyList<SelectedClaim> selected, IReadOnlyList<JobMlConcept> concepts,
@@ -817,7 +922,11 @@ public sealed class JobMlResumeCompiler(
                     packetById.GetValueOrDefault(block.SectionId)?.Kind.Equals(kind,
                         StringComparison.OrdinalIgnoreCase) == true)
                 .ToList();
-            if (matching.Count == 0) continue;
+            var additional = kind == "experience"
+                ? blocks.Where(block => packetById.GetValueOrDefault(block.SectionId)?.Kind.Equals(
+                    "additional_experience", StringComparison.OrdinalIgnoreCase) == true).ToList()
+                : [];
+            if (matching.Count == 0 && additional.Count == 0) continue;
 
             if (kind == "summary")
             {
@@ -840,8 +949,15 @@ public sealed class JobMlResumeCompiler(
                 "education" => "Education",
                 _ => "Experience"
             };
-            renderedGroups.Add($"## {groupHeading}\n\n" + string.Join("\n\n", matching.Select(block =>
-                RenderResumeBlock(block, packetById[block.SectionId], 3))));
+            var rendered = matching.Select(block => RenderResumeBlock(block, packetById[block.SectionId], 3))
+                .ToList();
+            if (additional.Count > 0)
+            {
+                rendered.Add("### Additional consulting, contract and earlier experience {#additional-experience}\n\n" +
+                             string.Join("\n\n", additional.Select(block =>
+                                 MarkdownEvidenceIndex.NormalizeText(block.Text))));
+            }
+            renderedGroups.Add($"## {groupHeading}\n\n" + string.Join("\n\n", rendered));
         }
 
         // The visible index is a compact projection of this document, not of the

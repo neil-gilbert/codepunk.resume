@@ -76,6 +76,16 @@ The vacancy may rank the skills index but cannot contribute its vocabulary.
 Senior role titles give a bounded preference to accepted productisation evidence,
 while hands-on roles continue to favour implementation evidence.
 
+Detailed roles contain only the claims selected for this target. A final
+`Additional consulting, contract and earlier experience` subsection preserves
+the broader chronology without expanding every engagement into bullets. It is
+built directly from accepted `experience` claims which were not selected for
+detail and whose date range is strictly longer than three months. The default
+threshold is configurable through `CompilationOptions`, and deliberately excludes
+an engagement lasting exactly three months. Each compact line retains its
+projected JobML claim, drift-checked evidence, full-transcript link, and cJobML
+citation. These lines bypass every model editing pass.
+
 This is a projection with optional bounded editing, not generation from a blank
 prompt.
 
@@ -145,8 +155,9 @@ control never fetches URLs contained in uploaded JobML.
 
 The compiler test suite covers immutable snapshots, drift rejection, compact
 source-sentence selection, honest gaps, partial-pass recovery, rejection of
-invented numeric facts, live bounded edits with OpenAI and the installed grug 9B
-model, and endpoint-only cJobML. The sample host
+invented numeric facts, strict additional-experience duration boundaries, live
+bounded edits with OpenAI and the installed grug 9B model, and endpoint-only
+cJobML. The sample host
 is also exercised in a real browser. The checked smoke flow publishes the example
 master, compiles a VP Engineering projection, renders the document, and produces
 valid Word and PDF files.

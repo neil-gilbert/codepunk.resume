@@ -100,17 +100,25 @@ public sealed class DocxExporter : IResumeExporter
             if (resume.Experience.Count > 0)
             {
                 body.Append(CreateParagraph("Experience", "Heading2"));
+                var detailedExperienceCount = resume.Experience.Count(experience => !experience.IsCompact);
                 for (var experienceIndex = 0; experienceIndex < resume.Experience.Count; experienceIndex++)
                 {
-                    if (resume.Experience.Count >= 10 && experienceIndex == 7)
+                    if (detailedExperienceCount >= 10 && experienceIndex == 7)
                         body.Append(new Paragraph(new Run(new Break { Type = BreakValues.Page })));
                     var exp = resume.Experience[experienceIndex];
+                    if (exp.IsCompact && (experienceIndex == 0 || !resume.Experience[experienceIndex - 1].IsCompact))
+                        body.Append(CreateParagraph("Additional consulting, contract and earlier experience",
+                            bold: true));
                     var roleParagraphs = new List<Paragraph>();
                     var dates = FormatDateRange(exp.StartDate, exp.EndDate, exp.IsCurrent);
-                    roleParagraphs.Add(CreateExperienceHeader(exp, dates, template));
+                    var header = CreateExperienceHeader(exp, dates, template);
+                    if (exp.IsCompact)
+                        AppendCitationMarkers(header, ExportArtifact.CitationNumbers(
+                            exp.Achievements.FirstOrDefault() ?? string.Empty, compact));
+                    roleParagraphs.Add(header);
                     if (exp.Technologies.Count > 0)
                         roleParagraphs.Add(CreateParagraph($"Technologies: {string.Join(", ", exp.Technologies)}", fontSize: 18, color: template.AccentHex, italic: true, fontFamily: template.FontFamily));
-                    foreach (var a in exp.Achievements)
+                    foreach (var a in exp.IsCompact ? [] : exp.Achievements)
                     {
                         var paragraph = CreateBullet(a);
                         AppendCitationMarkers(paragraph, ExportArtifact.CitationNumbers(a, compact));
@@ -121,7 +129,7 @@ public sealed class DocxExporter : IResumeExporter
                         KeepTogether(roleParagraphs[paragraphIndex], paragraphIndex < roleParagraphs.Count - 1);
                         body.Append(roleParagraphs[paragraphIndex]);
                     }
-                    body.Append(CreateParagraph("")); // spacing
+                    body.Append(CreateParagraph("", fontSize: exp.IsCompact ? 8 : 22)); // spacing
                 }
             }
 
