@@ -206,7 +206,7 @@ public sealed class PdfExporter : IResumeExporter
                         : $"{edu.Degree}, {edu.FieldOfStudy}";
                     if (!string.IsNullOrWhiteSpace(qualification))
                         CitedText(col.Item(), qualification,
-                            ExportArtifact.CitationNumbers($"{edu.Degree ?? ""} | {edu.FieldOfStudy ?? ""} | {edu.Institution ?? ""}", compact),
+                            ExportArtifact.EducationCitationNumbers(edu, compact),
                             template, 9, 1, bold: true);
                     var dates = FormatDates(edu.StartDate, edu.EndDate, false);
                     if (!string.IsNullOrEmpty(dates))

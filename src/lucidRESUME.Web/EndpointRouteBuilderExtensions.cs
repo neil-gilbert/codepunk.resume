@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Encodings.Web;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using lucidRESUME.Compiler;
 using lucidRESUME.Core.Interfaces;
 using lucidRESUME.Core.Models.Resume;
@@ -171,7 +173,7 @@ public static class EndpointRouteBuilderExtensions
         resume.JobMlRevision = result.Manifest.SourceRevision;
         resume.TargetRole = result.Manifest.TargetTitle;
         MarkdownSectionParser.PopulateSections(resume, result.HumanMarkdown);
-        PopulateProjectionSections(resume, result.ProjectedJobMl);
+        PopulateProjectionSections(resume, result.ProjectedJobMl, result.Manifest);
         var exporter = exporters.Single(x => x.Format == parsedFormat);
         var bytes = await exporter.ExportAsync(resume, ct);
         var metadata = parsedFormat switch
@@ -183,7 +185,8 @@ public static class EndpointRouteBuilderExtensions
         return Results.File(bytes, metadata.Item1, metadata.Item2);
     }
 
-    private static void PopulateProjectionSections(ResumeDocument resume, lucidRESUME.JobML.JobMlFile projection)
+    private static void PopulateProjectionSections(ResumeDocument resume, lucidRESUME.JobML.JobMlFile projection,
+        ProjectionManifest manifest)
     {
         // The generic Markdown parser recognises conventional "Experience" sections,
         // not the compiler's evidence-packet headings. Rebuild the export model from
@@ -197,6 +200,8 @@ public static class EndpointRouteBuilderExtensions
         var claimsBySubject = projection.Data.Claims
             .GroupBy(claim => claim.Subject, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        var packetsBySection = manifest.Sections
+            .ToDictionary(packet => packet.SectionId, StringComparer.OrdinalIgnoreCase);
         var ordered = projection.Data.Entities.Select(entity =>
         {
             var claims = claimsBySubject.GetValueOrDefault(entity.Id) ?? [];
@@ -213,6 +218,7 @@ public static class EndpointRouteBuilderExtensions
                 Entity = entity,
                 Claims = claims,
                 Passages = passages,
+                Packet = ProjectionPacket(entity.Source, packetsBySection),
                 Start = passages.FirstOrDefault()?.SourceStart ?? int.MaxValue
             };
         }).OrderBy(item => item.Start);
@@ -233,18 +239,67 @@ public static class EndpointRouteBuilderExtensions
             }
             if (item.Entity.Type == "education")
             {
-                resume.Education.Add(new Education { Institution = item.Entity.Name, Highlights = [prose] });
+                var education = SplitEducationHeading(item.Entity.Name);
+                resume.Education.Add(new Education
+                {
+                    Degree = education.Degree,
+                    Institution = education.Institution,
+                    Highlights = [prose]
+                });
                 continue;
             }
             if (item.Entity.Type != "experience") continue;
             var role = item.Entity.Name.Split(" · ", 2, StringSplitOptions.TrimEntries);
-            resume.Experience.Add(new WorkExperience
+            var experience = new WorkExperience
             {
                 Title = role[0],
                 Company = role.Length > 1 ? role[1] : null,
                 Achievements = [prose]
-            });
+            };
+            ApplyManifestDateRange(experience, item.Packet?.Heading);
+            resume.Experience.Add(experience);
         }
+    }
+
+    private static EvidencePacket? ProjectionPacket(string? source,
+        IReadOnlyDictionary<string, EvidencePacket> packetsBySection)
+    {
+        if (string.IsNullOrWhiteSpace(source)) return null;
+        var sectionId = source.Trim().TrimStart('#').Split(':', 2)[0];
+        return packetsBySection.GetValueOrDefault(sectionId);
+    }
+
+    private static void ApplyManifestDateRange(WorkExperience experience, string? heading)
+    {
+        if (string.IsNullOrWhiteSpace(heading)) return;
+        var match = Regex.Match(heading,
+            @"\|\s*(?<start>[A-Za-z]{3,9}\s+\d{4})\s*[-–]\s*(?<end>[A-Za-z]{3,9}\s+\d{4}|Present)\s*$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success || !TryParseMonth(match.Groups["start"].Value, out var start)) return;
+
+        experience.StartDate = start;
+        experience.IsCurrent = match.Groups["end"].Value.Equals("Present", StringComparison.OrdinalIgnoreCase);
+        if (!experience.IsCurrent && TryParseMonth(match.Groups["end"].Value, out var end))
+            experience.EndDate = end;
+    }
+
+    private static bool TryParseMonth(string value, out DateOnly date)
+    {
+        if (DateTime.TryParseExact(value.Trim(), ["MMM yyyy", "MMMM yyyy"],
+                CultureInfo.GetCultureInfo("en-GB"), DateTimeStyles.AllowWhiteSpaces, out var parsed))
+        {
+            date = DateOnly.FromDateTime(parsed);
+            return true;
+        }
+
+        date = default;
+        return false;
+    }
+
+    private static (string? Degree, string Institution) SplitEducationHeading(string heading)
+    {
+        var parts = heading.Split('|', 2, StringSplitOptions.TrimEntries);
+        return parts.Length == 2 ? (parts[0], parts[1]) : (null, heading);
     }
 
     public sealed record CompileRequest(string JobDescription, string? SourceRevision = null,

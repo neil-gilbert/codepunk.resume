@@ -38,6 +38,19 @@ internal static partial class ExportArtifact
             .ToList();
     }
 
+    public static IReadOnlyList<int> EducationCitationNumbers(Education education,
+        CJobMlProjection? projection)
+    {
+        // Projection-built education retains its exact evidence passage in Highlights.
+        // Prefer that immutable binding over rebuilding a string from optional fields.
+        var evidenceText = education.Highlights.FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+        if (!string.IsNullOrWhiteSpace(evidenceText)) return CitationNumbers(evidenceText, projection);
+        return CitationNumbers(string.Join(" | ", new[]
+            {
+                education.Degree, education.FieldOfStudy, education.Institution
+            }.Where(value => !string.IsNullOrWhiteSpace(value))), projection);
+    }
+
     private static string NormalizeRenderedText(string text)
     {
         var normalized = MarkdownEvidenceIndex.NormalizeText(text);

@@ -1,4 +1,5 @@
 using lucidRESUME.Core.Models.Filters;
+using lucidRESUME.Core.Models.Evidence;
 using lucidRESUME.Core.Models.Jobs;
 using lucidRESUME.Core.Models.Profile;
 using lucidRESUME.Core.Models.Resume;
@@ -105,6 +106,9 @@ public sealed class AppState
         aggregate.CanonicalMarkdown = selected.CanonicalMarkdown;
         aggregate.JobMlSource = selected.JobMlSource;
         aggregate.JobMlRevision = selected.JobMlRevision;
+        aggregate.CompleteJobMlUri = selected.CompleteJobMlUri;
+        aggregate.IncludeCompactJobMl = selected.IncludeCompactJobMl;
+        aggregate.OutputTemplateId = selected.OutputTemplateId;
 
         aggregate.Experience = DeduplicateExperience(Resumes.SelectMany(r => r.Experience).ToList());
         ApplyCareerAnchors(aggregate.Experience, Overrides);
@@ -113,11 +117,9 @@ public sealed class AppState
             .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .ToList();
-        aggregate.Projects = Resumes.SelectMany(r => r.Projects)
-            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderByDescending(p => p.Technologies.Count).First())
-            .ToList();
+        aggregate.Projects = DeduplicateProjects(Resumes.SelectMany(r => r.Projects).ToList());
         aggregate.Entities = Resumes.SelectMany(r => r.Entities).ToList();
+        aggregate.IngestionDecisions = Resumes.SelectMany(r => r.IngestionDecisions).ToList();
 
         aggregate.Skills = Resumes
             .SelectMany(r => r.Skills)
@@ -129,7 +131,10 @@ public sealed class AppState
                 {
                     Name = first.Name,
                     Category = g.Select(s => s.Category).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)),
-                    YearsExperience = g.Max(s => s.YearsExperience)
+                    YearsExperience = g.Max(s => s.YearsExperience),
+                    EndorsementCount = g.Max(s => s.EndorsementCount),
+                    ImportSources = g.SelectMany(s => s.ImportSources)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList()
                 };
             })
             .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
@@ -142,6 +147,7 @@ public sealed class AppState
 
         aggregate.PlainText = string.Join("\n\n", Resumes.Select(r => r.PlainText).Where(s => !string.IsNullOrWhiteSpace(s)));
         aggregate.RawMarkdown = string.Join("\n\n---\n\n", Resumes.Select(r => r.RawMarkdown).Where(s => !string.IsNullOrWhiteSpace(s)));
+        EvidenceLedgerBuilder.Rebuild(aggregate);
         return aggregate;
     }
 
@@ -253,6 +259,8 @@ public sealed class AppState
                                         || ach.Contains(a2, StringComparison.OrdinalIgnoreCase)))
                 achievements.Add(ach);
         }
+        var importSources = primary.ImportSources.Concat(secondary.ImportSources)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         return new WorkExperience
         {
@@ -266,6 +274,7 @@ public sealed class AppState
             IsCareerAnchor = primary.IsCareerAnchor || secondary.IsCareerAnchor,
             Technologies = techs.ToList(),
             Achievements = achievements,
+            ImportSources = importSources,
         };
     }
 
@@ -295,8 +304,62 @@ public sealed class AppState
     {
         return all
             .GroupBy(e => NormalizeCompany(e.Institution ?? ""))
-            .Select(g => g.OrderByDescending(e => (e.Degree?.Length ?? 0) + (e.FieldOfStudy?.Length ?? 0)).First())
+            .Select(g =>
+            {
+                var entries = g.ToList();
+                var primary = entries
+                    .OrderByDescending(e => (e.Degree?.Length ?? 0) + (e.FieldOfStudy?.Length ?? 0))
+                    .First();
+                return new Education
+                {
+                    Id = primary.Id,
+                    Institution = primary.Institution,
+                    Degree = primary.Degree,
+                    FieldOfStudy = primary.FieldOfStudy,
+                    StartDate = entries.Select(entry => entry.StartDate).Min(),
+                    EndDate = entries.Select(entry => entry.EndDate).Max(),
+                    Gpa = primary.Gpa,
+                    GraduationYear = primary.GraduationYear,
+                    Level = primary.Level,
+                    Highlights = entries.SelectMany(e => e.Highlights)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    ImportSources = entries.SelectMany(e => e.ImportSources)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                };
+            })
             .ToList();
+    }
+
+    private static List<Project> DeduplicateProjects(List<Project> all)
+    {
+        return all.GroupBy(project => project.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var entries = group.ToList();
+                var primary = entries
+                    .OrderByDescending(project => project.Description?.Length ?? 0)
+                    .ThenByDescending(project => project.Technologies.Count)
+                    .First();
+                var metadata = new Dictionary<string, string>(primary.EvidenceMetadata,
+                    StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in entries)
+                    foreach (var (key, value) in entry.EvidenceMetadata)
+                        metadata.TryAdd(key, value);
+                return new Project
+                {
+                    Id = primary.Id,
+                    Name = primary.Name,
+                    Description = primary.Description,
+                    Technologies = entries.SelectMany(project => project.Technologies)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    ImportSources = entries.SelectMany(project => project.ImportSources)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+                    Url = primary.Url ?? entries.Select(project => project.Url)
+                        .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)),
+                    Date = primary.Date ?? entries.Select(project => project.Date).Max(),
+                    EvidenceMetadata = metadata
+                };
+            }).ToList();
     }
 
     private static DateOnly? Min(DateOnly? a, DateOnly? b) =>

@@ -92,7 +92,11 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         var token = Regex.Match(html, "const token='(?<token>[^']+)'", RegexOptions.CultureInvariant)
             .Groups["token"].Value;
         const string prose = "Led a TypeScript engineering team through platform change on AWS.";
+        const string employmentDates = "Engineering Lead · Example Ltd | 2022-01-01 | Present";
+        const string education = "BSc (Hons) Computer Science | Example University";
         var fingerprint = MarkdownEvidenceIndex.Fingerprint(prose);
+        var dateFingerprint = MarkdownEvidenceIndex.Fingerprint(employmentDates);
+        var educationFingerprint = MarkdownEvidenceIndex.Fingerprint(education);
         var source = $$"""
             # Jane Smith
 
@@ -100,6 +104,16 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
 
             <p id="leadership">
             {{prose}}
+            </p>
+
+            <p id="employment-dates">
+            {{employmentDates}}
+            </p>
+
+            ## Education {#example-education}
+
+            <p id="degree">
+            {{education}}
             </p>
 
             ---
@@ -121,6 +135,10 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
                 type: experience
                 name: Example Ltd
                 source: "#example-role"
+              - id: example-education
+                type: education
+                name: {{education}}
+                source: "#example-education"
             claims:
               - id: leadership
                 subject: example-role
@@ -139,6 +157,30 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
                     type: source_ledger
                     ref: ledger://experience/example-role
                     title: Imported career record
+              - id: example-role-dates
+                subject: example-role
+                type: experience
+                statement: {{employmentDates}}
+                origin: declared
+                review: accepted
+                concepts: {}
+                supported_by:
+                  - type: prose
+                    ref: "#employment-dates"
+                    fingerprint:
+                      text: "{{dateFingerprint}}"
+              - id: degree
+                subject: example-education
+                type: education
+                statement: Holds a BSc (Hons) in Computer Science from Example University.
+                origin: declared
+                review: accepted
+                concepts: {}
+                supported_by:
+                  - type: prose
+                    ref: "#degree"
+                    fingerprint:
+                      text: "{{educationFingerprint}}"
             concepts:
               - id: typescript
                 type: skill
@@ -192,6 +234,9 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         var documentXml = await documentReader.ReadToEndAsync();
         Assert.Contains(prose, documentXml);
         Assert.Contains("Target role: Head of Engineering", documentXml);
+        Assert.Contains("Jan 2022 – Present", documentXml);
+        Assert.Contains("BSc (Hons) Computer Science — Example University", documentXml);
+        Assert.Matches(@"BSc \(Hons\) Computer Science — Example University.*?\[\d+\]", documentXml);
         using var relationshipsReader = new StreamReader(
             archive.GetEntry("word/_rels/document.xml.rels")!.Open());
         var relationshipsXml = await relationshipsReader.ReadToEndAsync();

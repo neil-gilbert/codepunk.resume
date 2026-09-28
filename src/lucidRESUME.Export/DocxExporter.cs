@@ -134,11 +134,8 @@ public sealed class DocxExporter : IResumeExporter
                     var title = new[] { edu.Degree, edu.FieldOfStudy, edu.Institution }
                         .Where(s => !string.IsNullOrWhiteSpace(s));
                     var paragraph = CreateParagraph(string.Join(" — ", title), bold: true);
-                    var qualification = string.IsNullOrWhiteSpace(edu.FieldOfStudy)
-                        ? edu.Degree ?? ""
-                        : $"{edu.Degree} | {edu.FieldOfStudy}";
                     AppendCitationMarkers(paragraph,
-                        ExportArtifact.CitationNumbers($"{qualification} | {edu.Institution ?? ""}", compact));
+                        ExportArtifact.EducationCitationNumbers(edu, compact));
                     body.Append(paragraph);
                     var dates = FormatDateRange(edu.StartDate, edu.EndDate, false);
                     if (!string.IsNullOrEmpty(dates))

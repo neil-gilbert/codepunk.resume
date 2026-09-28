@@ -132,9 +132,18 @@ public sealed class ResumeImportValidationTests
             Title = "Principal Engineer",
             StartDate = new DateOnly(2022, 1, 1),
             IsCurrent = true,
-            Achievements = ["Led the platform migration."]
+            Achievements = ["Led the platform migration."],
+            ImportSources = ["platform.docx"]
         });
-        first.Skills.Add(new Skill { Name = "Kubernetes" });
+        first.Skills.Add(new Skill
+        { Name = "Kubernetes", EndorsementCount = 3, ImportSources = ["platform.docx"] });
+        first.Projects.Add(new Project
+        {
+            Name = "Atlas",
+            Description = "Built the platform.",
+            Technologies = ["C#"],
+            ImportSources = ["platform.docx"]
+        });
 
         var second = ResumeDocument.Create("leadership.docx", "application/docx", 100);
         second.Experience.Add(new WorkExperience
@@ -143,10 +152,20 @@ public sealed class ResumeImportValidationTests
             Title = "Principal Platform Engineer",
             StartDate = new DateOnly(2022, 2, 1),
             IsCurrent = true,
-            Achievements = ["Led the platform migration.", "Mentored eight engineers."]
+            Achievements = ["Led the platform migration.", "Mentored eight engineers."],
+            ImportSources = ["leadership.docx"]
         });
-        second.Skills.Add(new Skill { Name = "kubernetes" });
+        second.Skills.Add(new Skill
+        { Name = "kubernetes", EndorsementCount = 9, ImportSources = ["leadership.docx"] });
         second.Skills.Add(new Skill { Name = "Engineering Leadership" });
+        second.Projects.Add(new Project
+        {
+            Name = "Atlas",
+            Description = "Built and operated the platform for production customers.",
+            Technologies = ["Azure"],
+            Url = "https://example.com/atlas",
+            ImportSources = ["leadership.docx"]
+        });
 
         var state = new AppState();
         state.AddOrReplaceResume(first);
@@ -158,7 +177,17 @@ public sealed class ResumeImportValidationTests
         var aggregate = Assert.IsType<ResumeDocument>(state.BuildAggregateResume());
         Assert.Single(aggregate.Experience);
         Assert.Equal(2, aggregate.Experience[0].Achievements.Count);
+        Assert.Equal(2, aggregate.Experience[0].ImportSources.Count);
         Assert.Equal(2, aggregate.Skills.Count);
+        var kubernetes = Assert.Single(aggregate.Skills, skill =>
+            skill.Name.Equals("Kubernetes", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(9, kubernetes.EndorsementCount);
+        Assert.Equal(2, kubernetes.ImportSources.Count);
+        var project = Assert.Single(aggregate.Projects);
+        Assert.Equal(2, project.Technologies.Count);
+        Assert.Equal(2, project.ImportSources.Count);
+        Assert.Equal("https://example.com/atlas", project.Url);
+        Assert.NotEmpty(aggregate.EvidenceLedger.Claims);
     }
 
 }
