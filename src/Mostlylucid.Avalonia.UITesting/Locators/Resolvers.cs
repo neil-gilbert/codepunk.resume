@@ -214,8 +214,6 @@ public sealed class RoleLocator : Locator
         foreach (var c in NameLocator.Walk(root))
         {
             var peer = ControlAutomationPeer.CreatePeerForElement(c);
-            if (peer is null) continue;
-
             var peerRole = peer.GetAutomationControlType().ToString();
             if (!string.Equals(peerRole, Role, StringComparison.OrdinalIgnoreCase)) continue;
 

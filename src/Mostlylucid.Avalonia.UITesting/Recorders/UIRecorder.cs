@@ -42,6 +42,7 @@ public sealed class UIRecorder : IAsyncDisposable
 
     public void StartRecording(Window window, bool recordVideo = false, int videoFps = 5)
     {
+        ArgumentNullException.ThrowIfNull(window);
         if (_isRecording) return;
 
         _isRecording = true;

@@ -21,12 +21,15 @@ public sealed class AdzunaAdapter : IJobSearchAdapter
 
     public AdzunaAdapter(HttpClient http, IOptions<AdzunaOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(options);
         _http = http;
         _options = options.Value;
     }
 
     public async Task<IReadOnlyList<JobDescription>> SearchAsync(JobSearchQuery query, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         if (!IsConfigured) return [];
 
         var url = $"https://api.adzuna.com/v1/api/jobs/{_options.Country}/search/1" +
@@ -57,12 +60,12 @@ public sealed class AdzunaAdapter : IJobSearchAdapter
         return job;
     }
 
-    private record AdzunaResponse([property: System.Text.Json.Serialization.JsonPropertyName("results")] List<AdzunaResult> Results);
-    private record AdzunaResult(string Id, string Title, AdzunaCompany? Company,
+    private sealed record AdzunaResponse([property: System.Text.Json.Serialization.JsonPropertyName("results")] List<AdzunaResult> Results);
+    private sealed record AdzunaResult(string Id, string Title, AdzunaCompany? Company,
         AdzunaLocation? Location, string? Description,
         [property: System.Text.Json.Serialization.JsonPropertyName("redirect_url")] string RedirectUrl,
         [property: System.Text.Json.Serialization.JsonPropertyName("salary_min")] decimal? SalaryMin,
         [property: System.Text.Json.Serialization.JsonPropertyName("salary_max")] decimal? SalaryMax);
-    private record AdzunaCompany([property: System.Text.Json.Serialization.JsonPropertyName("display_name")] string DisplayName);
-    private record AdzunaLocation([property: System.Text.Json.Serialization.JsonPropertyName("display_name")] string DisplayName);
+    private sealed record AdzunaCompany([property: System.Text.Json.Serialization.JsonPropertyName("display_name")] string DisplayName);
+    private sealed record AdzunaLocation([property: System.Text.Json.Serialization.JsonPropertyName("display_name")] string DisplayName);
 }

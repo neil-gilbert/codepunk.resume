@@ -108,6 +108,8 @@ public sealed class TemplateParsingHints
     /// </summary>
     public string? MapSection(string headingText)
     {
+        ArgumentNullException.ThrowIfNull(headingText);
+
         var key = headingText.Trim().ToLowerInvariant();
         if (SectionMap.TryGetValue(key, out var exact)) return exact;
 

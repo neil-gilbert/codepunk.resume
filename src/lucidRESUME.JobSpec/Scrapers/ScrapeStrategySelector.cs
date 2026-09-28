@@ -31,6 +31,12 @@ public sealed class ScrapeStrategySelector
         IOptions<CloudflareBrOptions> cfBrOptions,
         ILogger<ScrapeStrategySelector> logger)
     {
+        ArgumentNullException.ThrowIfNull(layer1);
+        ArgumentNullException.ThrowIfNull(layer2);
+        ArgumentNullException.ThrowIfNull(layer3);
+        ArgumentNullException.ThrowIfNull(layer4);
+        ArgumentNullException.ThrowIfNull(cfBrOptions);
+        ArgumentNullException.ThrowIfNull(logger);
         _layer1 = layer1;
         _layer2 = layer2;
         _layer3 = layer3;
@@ -45,6 +51,7 @@ public sealed class ScrapeStrategySelector
     /// </summary>
     public IReadOnlyList<IJobPageScraper> SelectScrapers(Uri uri)
     {
+        ArgumentNullException.ThrowIfNull(uri);
         var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase)
             ? uri.Host[4..]
             : uri.Host;

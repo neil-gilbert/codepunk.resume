@@ -10,7 +10,7 @@ namespace lucidRESUME.Parsing.Templates;
 /// Matching: returns the best known template whose fingerprint Jaccard similarity
 /// exceeds <see cref="MatchThreshold"/>. Returns null when nothing matches.
 /// </summary>
-public sealed class TemplateRegistry
+public sealed class TemplateRegistry : IDisposable
 {
     public double MatchThreshold { get; set; } = 0.80;
 
@@ -42,6 +42,7 @@ public sealed class TemplateRegistry
     /// </summary>
     public async Task<KnownTemplate?> FindMatchAsync(TemplateFingerprint fingerprint, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(fingerprint);
         var templates = await LoadAsync(ct);
 
         KnownTemplate? best = null;
@@ -79,6 +80,8 @@ public sealed class TemplateRegistry
     /// </summary>
     public async Task LearnAsync(TemplateFingerprint fingerprint, string name, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(fingerprint);
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         var templates = await LoadAsync(ct);
 
         // Avoid near-duplicates
@@ -115,6 +118,8 @@ public sealed class TemplateRegistry
         IEnumerable<string> sampleFilePaths,
         CancellationToken ct = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(templateId);
+        ArgumentNullException.ThrowIfNull(sampleFilePaths);
         var templates = await LoadAsync(ct);
         var template = templates.FirstOrDefault(t => t.Id == templateId);
         if (template is null)
@@ -144,18 +149,22 @@ public sealed class TemplateRegistry
         await _lock.WaitAsync(ct);
         try
         {
-            if (_templates is not null) return _templates;
-
             if (!File.Exists(_registryPath))
             {
                 _templates = [];
                 return _templates;
             }
 
-            await using var stream = File.OpenRead(_registryPath);
-            _templates = await JsonSerializer.DeserializeAsync<List<KnownTemplate>>(stream, JsonOpts, ct)
-                         ?? [];
+            var stream = File.OpenRead(_registryPath);
+            await using (stream)
+            {
+                _templates = await JsonSerializer.DeserializeAsync<List<KnownTemplate>>(stream, JsonOpts, ct) ?? [];
+            }
             return _templates;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -172,8 +181,15 @@ public sealed class TemplateRegistry
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_registryPath)!);
-            await using var stream = File.Create(_registryPath);
-            await JsonSerializer.SerializeAsync(stream, _templates, JsonOpts, ct);
+            var stream = File.Create(_registryPath);
+            await using (stream)
+            {
+                await JsonSerializer.SerializeAsync(stream, _templates, JsonOpts, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -181,4 +197,6 @@ public sealed class TemplateRegistry
         }
         finally { _lock.Release(); }
     }
+
+    public void Dispose() => _lock.Dispose();
 }

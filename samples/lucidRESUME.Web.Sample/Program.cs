@@ -6,7 +6,7 @@ builder.Services.AddLucidResumeCompiler(builder.Configuration);
 var app = builder.Build();
 app.UseHttpsRedirection();
 app.UseAntiforgery();
-app.MapGet("/", () => Results.Redirect("/lucidresume/"));
+app.MapGet("/", () => Results.Redirect("/resume/"));
 app.MapLucidResumeCompiler();
 app.Run();
 

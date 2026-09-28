@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
@@ -49,7 +50,9 @@ public sealed class PdfTextParser : IDocumentParser
                 if (string.IsNullOrWhiteSpace(text)) continue;
 
                 var isHeading = fontSize >= headingThreshold
-                    || (text.Length < 50 && text == text.ToUpperInvariant() && text.Any(char.IsLetter));
+                    || (text.Length < 50
+                        && text.Equals(text.ToUpperInvariant(), StringComparison.Ordinal)
+                        && text.Any(char.IsLetter));
 
                 if (isHeading)
                 {
@@ -59,7 +62,7 @@ public sealed class PdfTextParser : IDocumentParser
                     current = new DocumentSection { Heading = text, Level = fontSize >= bodyFontSize * 1.5 ? 1 : 2 };
 
                     var prefix = current.Level == 1 ? "##" : "###";
-                    sb.AppendLine($"{prefix} {text}");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"{prefix} {text}");
                     plain.AppendLine(text);
                 }
                 else
@@ -84,6 +87,10 @@ public sealed class PdfTextParser : IDocumentParser
                 PageCount = pdf.NumberOfPages,
                 Confidence = confidence
             });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

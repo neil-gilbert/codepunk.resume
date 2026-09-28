@@ -179,6 +179,8 @@ public sealed class UITestContext
         Justification = "Property access is part of the stateful test-context public API.")]
     public object? GetProperty(object target, string propertyPath)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(propertyPath);
         var parts = propertyPath.Split('.');
         object? current = target;
 
@@ -210,6 +212,8 @@ public sealed class UITestContext
         Justification = "Property mutation is part of the stateful test-context public API.")]
     public bool SetProperty(object target, string propertyPath, object? value)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(propertyPath);
         var parts = propertyPath.Split('.');
         if (parts.Length == 0) return false;
 

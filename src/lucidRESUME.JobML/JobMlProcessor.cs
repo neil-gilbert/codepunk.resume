@@ -8,6 +8,7 @@ public sealed class JobMlProcessor
 
     public static IReadOnlyList<JobMlDiagnostic> Validate(JobMlFile file)
     {
+        ArgumentNullException.ThrowIfNull(file);
         var diagnostics = new List<JobMlDiagnostic>();
         var root = file.Data;
         var index = MarkdownEvidenceIndex.Create(file.Markdown);
@@ -134,7 +135,7 @@ public sealed class JobMlProcessor
     }
 
     private static void ValidateEmbedding(JobMlEmbedding? embedding, string path,
-        IReadOnlyDictionary<string, JobMlSemanticSpace> spaces, ICollection<JobMlDiagnostic> diagnostics)
+        Dictionary<string, JobMlSemanticSpace> spaces, List<JobMlDiagnostic> diagnostics)
     {
         if (embedding is null) return;
         if (!spaces.TryGetValue(embedding.Space, out var space))
@@ -150,6 +151,7 @@ public sealed class JobMlProcessor
 
     public static IReadOnlyList<ClaimEvidenceResolution> Reconcile(JobMlFile file)
     {
+        ArgumentNullException.ThrowIfNull(file);
         var index = MarkdownEvidenceIndex.Create(file.Markdown);
         return file.Data.Claims.Select(claim => new ClaimEvidenceResolution(
             claim,
@@ -158,6 +160,7 @@ public sealed class JobMlProcessor
 
     public static IReadOnlyList<JobMlCoverageEntry> AnalyseCoverage(JobMlFile file)
     {
+        ArgumentNullException.ThrowIfNull(file);
         var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var concept in file.Data.Concepts)
         {
@@ -263,7 +266,7 @@ public sealed class JobMlProcessor
         IEnumerable<string> ids,
         string kind,
         string path,
-        ICollection<JobMlDiagnostic> diagnostics)
+        List<JobMlDiagnostic> diagnostics)
     {
         foreach (var group in ids.Where(id => !string.IsNullOrWhiteSpace(id)).GroupBy(id => id, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1))
             diagnostics.Add(Error("JML004", $"Duplicate {kind} id '{group.Key}'.", path));

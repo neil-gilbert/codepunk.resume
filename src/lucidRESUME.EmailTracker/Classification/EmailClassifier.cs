@@ -39,6 +39,7 @@ public static class EmailClassifier
 
     public static ClassificationResult Classify(ScannedEmail email)
     {
+        ArgumentNullException.ThrowIfNull(email);
         var searchText = $"{email.Subject} {email.BodyPreview}";
 
         foreach (var (patterns, stage, eventType, confidence) in Rules)

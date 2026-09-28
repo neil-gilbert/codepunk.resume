@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using lucidRESUME.Core.Interfaces;
 
 namespace lucidRESUME.JobSpec.Extraction;
@@ -15,6 +16,7 @@ public static class LlmExtractor
     {
         var candidates = new List<JdFieldCandidate>();
         if (llm is null) return candidates;
+        ArgumentNullException.ThrowIfNull(text);
 
         try
         {
@@ -70,10 +72,14 @@ public static class LlmExtractor
             if (root.TryGetProperty("isHybrid", out var h) && h.ValueKind == JsonValueKind.True)
                 candidates.Add(new("remote", "hybrid", 0.80, "llm"));
             if (root.TryGetProperty("yearsExperience", out var y) && y.ValueKind == JsonValueKind.Number)
-                candidates.Add(new("yearsexp", y.GetInt32().ToString(), 0.85, "llm"));
+                candidates.Add(new("yearsexp", y.GetInt32().ToString(CultureInfo.InvariantCulture), 0.85, "llm"));
 
             AddArrayField(candidates, root, "requiredSkills", "skill", 0.80);
             AddArrayField(candidates, root, "preferredSkills", "preferredskill", 0.80);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch { /* LLM failure is non-fatal — other extractors still contribute */ }
 

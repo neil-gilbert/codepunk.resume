@@ -14,6 +14,8 @@ public sealed class CloudflareMarkdownHeaderScraper : IJobPageScraper
 
     public CloudflareMarkdownHeaderScraper(HttpClient http, ILogger<CloudflareMarkdownHeaderScraper> logger)
     {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(logger);
         _http = http;
         _logger = logger;
     }
@@ -24,6 +26,7 @@ public sealed class CloudflareMarkdownHeaderScraper : IJobPageScraper
 
     public async Task<ScrapeResult?> ScrapeAsync(Uri uri, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(uri);
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.TryAddWithoutValidation("Accept", "text/markdown, text/html;q=0.9, */*;q=0.5");
 
@@ -33,12 +36,17 @@ public sealed class CloudflareMarkdownHeaderScraper : IJobPageScraper
             response = await _http.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "[{Scraper}] HTTP request failed for {Url}", Name, uri);
             return null;
         }
 
+        using var responseScope = response;
         var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
 
         // Log Cloudflare markdown token count if present

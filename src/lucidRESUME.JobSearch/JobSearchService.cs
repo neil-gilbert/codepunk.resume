@@ -43,9 +43,11 @@ public sealed class JobSearchService
         {
             throw;
         }
+#pragma warning disable CA1031 // Providers are isolated so one unavailable board does not fail all results.
         catch
         {
             return [];
         }
+#pragma warning restore CA1031
     }
 }

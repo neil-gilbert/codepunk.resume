@@ -77,6 +77,8 @@ public static class ScreenshotCapture
     /// </summary>
     public static Rect GetControlBoundsInWindow(Control control, Window window, double padding = 0)
     {
+        ArgumentNullException.ThrowIfNull(control);
+        ArgumentNullException.ThrowIfNull(window);
         var topLeft = control.TranslatePoint(new Point(0, 0), window) ?? new Point(0, 0);
         var rect = new Rect(topLeft.X, topLeft.Y, control.Bounds.Width, control.Bounds.Height);
         return padding > 0 ? rect.Inflate(padding) : rect;
@@ -91,6 +93,8 @@ public static class ScreenshotCapture
     /// </summary>
     public static async Task<string> CaptureCompositeAsync(IReadOnlyList<Window> windows, string filePath)
     {
+        ArgumentNullException.ThrowIfNull(windows);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         if (windows.Count == 0)
             throw new InvalidOperationException("CaptureComposite requires at least one window.");
 

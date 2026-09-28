@@ -4,13 +4,15 @@ using lucidRESUME.Core.Models.Resume;
 
 namespace lucidRESUME.JobSearch;
 
-public sealed class RoleSuggestionService
+public static class RoleSuggestionService
 {
     private static readonly HashSet<string> SkillCategories =
         new(StringComparer.OrdinalIgnoreCase) { "Language", "Framework" };
 
-    public IReadOnlyList<JobSearchQuery> GenerateQueries(ResumeDocument resume, UserProfile profile)
+    public static IReadOnlyList<JobSearchQuery> GenerateQueries(ResumeDocument resume, UserProfile profile)
     {
+        ArgumentNullException.ThrowIfNull(resume);
+        ArgumentNullException.ThrowIfNull(profile);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var queries = new List<JobSearchQuery>();
 
@@ -21,8 +23,7 @@ public sealed class RoleSuggestionService
 
         void TryAdd(string keywords)
         {
-            var key = keywords.ToLowerInvariant();
-            if (seen.Add(key))
+            if (seen.Add(keywords))
                 queries.Add(MakeQuery(keywords));
         }
 

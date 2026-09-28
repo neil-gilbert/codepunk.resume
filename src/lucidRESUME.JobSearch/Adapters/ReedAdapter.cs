@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Globalization;
 using lucidRESUME.Core.Interfaces;
 using lucidRESUME.Core.Models.Jobs;
 using Microsoft.Extensions.Options;
@@ -23,20 +24,23 @@ public sealed class ReedAdapter : IJobSearchAdapter
 
     public ReedAdapter(HttpClient http, IOptions<ReedOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(options);
         _http = http;
         _options = options.Value;
     }
 
     public async Task<IReadOnlyList<JobDescription>> SearchAsync(JobSearchQuery query, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         if (!IsConfigured) return [];
 
         // Reed uses Basic auth: API key as username, empty password
         var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{_options.ApiKey}:"));
-        var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(query));
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUrl(query));
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
 
-        var response = await _http.SendAsync(request, ct);
+        using var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<ReedResponse>(ct);
@@ -61,7 +65,7 @@ public sealed class ReedAdapter : IJobSearchAdapter
         {
             Type = JobSourceType.Reed,
             Url = r.JobUrl,
-            ExternalId = r.JobId.ToString()
+            ExternalId = r.JobId.ToString(CultureInfo.InvariantCulture)
         });
         job.Title = r.JobTitle;
         job.Company = r.EmployerName;
@@ -71,10 +75,10 @@ public sealed class ReedAdapter : IJobSearchAdapter
         return job;
     }
 
-    private record ReedResponse(
+    private sealed record ReedResponse(
         [property: JsonPropertyName("results")] List<ReedResult> Results);
 
-    private record ReedResult(
+    private sealed record ReedResult(
         [property: JsonPropertyName("jobId")] int JobId,
         [property: JsonPropertyName("employerName")] string? EmployerName,
         [property: JsonPropertyName("jobTitle")] string? JobTitle,

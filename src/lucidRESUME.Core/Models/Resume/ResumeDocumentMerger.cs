@@ -16,7 +16,7 @@ public sealed class ResumeDocumentMerger
 
     public ResumeDocumentMerger(IEmbeddingService embedder)
     {
-        _embedder = embedder;
+        _embedder = embedder ?? throw new ArgumentNullException(nameof(embedder));
     }
 
     /// <summary>
@@ -26,6 +26,9 @@ public sealed class ResumeDocumentMerger
     public async Task<ImportPreview> PreviewMergeAsync(
         ResumeDocument target, ResumeDocument incoming, string sourceName, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(incoming);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
         var preview = new ImportPreview { SourceName = sourceName, Incoming = incoming };
 
         // Personal info changes
@@ -138,6 +141,8 @@ public sealed class ResumeDocumentMerger
     /// </summary>
     public static void ApplyPreview(ResumeDocument target, ImportPreview preview)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(preview);
         var source = preview.SourceName;
 
         // Personal info
@@ -228,6 +233,9 @@ public sealed class ResumeDocumentMerger
     public async Task<List<ImportAnomaly>> MergeIntoAsync(
         ResumeDocument target, ResumeDocument incoming, string sourceName, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(incoming);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
         var anomalies = new List<ImportAnomaly>();
 
         MergePersonalInfo(target.Personal, incoming.Personal, sourceName, anomalies);
@@ -386,17 +394,15 @@ public sealed class ResumeDocumentMerger
                 return exp;
         }
 
-        float[] incomingEmb;
-        try { incomingEmb = await _embedder.EmbedAsync(incoming.Company, ct); }
-        catch { return null; }
+        var incomingEmb = await TryEmbedAsync(incoming.Company, ct);
+        if (incomingEmb is null) return null;
 
         foreach (var exp in existing)
         {
             if (string.IsNullOrWhiteSpace(exp.Company)) continue;
 
-            float[] existingEmb;
-            try { existingEmb = await _embedder.EmbedAsync(exp.Company, ct); }
-            catch { continue; }
+            var existingEmb = await TryEmbedAsync(exp.Company, ct);
+            if (existingEmb is null) continue;
             var similarity = _embedder.CosineSimilarity(incomingEmb, existingEmb);
 
             if (similarity < CompanyMatchThreshold) continue;
@@ -412,14 +418,12 @@ public sealed class ResumeDocumentMerger
         if (exact != null) return exact;
 
         // Semantic match for aliases ("K8s" ≈ "Kubernetes")
-        float[] incomingEmb;
-        try { incomingEmb = await _embedder.EmbedAsync(skillName, ct); }
-        catch { return null; }
+        var incomingEmb = await TryEmbedAsync(skillName, ct);
+        if (incomingEmb is null) return null;
         foreach (var skill in existing)
         {
-            float[] existingEmb;
-            try { existingEmb = await _embedder.EmbedAsync(skill.Name, ct); }
-            catch { continue; }
+            var existingEmb = await TryEmbedAsync(skill.Name, ct);
+            if (existingEmb is null) continue;
             if (_embedder.CosineSimilarity(incomingEmb, existingEmb) >= 0.85f)
                 return skill;
         }
@@ -435,15 +439,13 @@ public sealed class ResumeDocumentMerger
             NormalizeName(education.Institution ?? "") == NormalizeName(incoming.Institution));
         if (exact != null) return exact;
 
-        float[] incomingEmb;
-        try { incomingEmb = await _embedder.EmbedAsync(incoming.Institution, ct); }
-        catch { return null; }
+        var incomingEmb = await TryEmbedAsync(incoming.Institution, ct);
+        if (incomingEmb is null) return null;
         foreach (var edu in existing)
         {
             if (string.IsNullOrWhiteSpace(edu.Institution)) continue;
-            float[] existingEmb;
-            try { existingEmb = await _embedder.EmbedAsync(edu.Institution, ct); }
-            catch { continue; }
+            var existingEmb = await TryEmbedAsync(edu.Institution, ct);
+            if (existingEmb is null) continue;
             if (_embedder.CosineSimilarity(incomingEmb, existingEmb) >= CompanyMatchThreshold)
                 return edu;
         }
@@ -487,7 +489,7 @@ public sealed class ResumeDocumentMerger
 
     private static double TitleTokenSimilarity(string? first, string? second)
     {
-        static HashSet<string> Tokens(string? value) => Regex.Matches(value?.ToLowerInvariant() ?? "", "[a-z]+")
+        static HashSet<string> Tokens(string? value) => Regex.Matches(value ?? "", "[a-z]+", RegexOptions.IgnoreCase)
             .Select(match => CanonicalTitleToken(match.Value))
             .Where(token => token is not "contract" and not "contractor")
             .ToHashSet(StringComparer.Ordinal);
@@ -497,13 +499,13 @@ public sealed class ResumeDocumentMerger
         return (double)left.Intersect(right).Count() / left.Union(right).Count();
     }
 
-    private static string CanonicalTitleToken(string token) => token switch
+    private static string CanonicalTitleToken(string token) => token.ToUpperInvariant() switch
     {
-        "developer" or "development" => "develop",
-        "engineer" or "engineering" => "engineer",
-        "architect" or "architecture" => "architect",
-        "manager" or "management" => "manage",
-        _ => token
+        "DEVELOPER" or "DEVELOPMENT" => "DEVELOP",
+        "ENGINEER" or "ENGINEERING" => "ENGINEER",
+        "ARCHITECT" or "ARCHITECTURE" => "ARCHITECT",
+        "MANAGER" or "MANAGEMENT" => "MANAGE",
+        var normalized => normalized
     };
 
     private static bool CompaniesMatch(string existing, string incoming)
@@ -519,8 +521,8 @@ public sealed class ResumeDocumentMerger
 
     private static string NormalizeName(string value)
     {
-        var normalized = new string(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
-        string[] suffixes = ["limited", "ltd", "plc", "corporation", "corp", "incorporated", "inc"];
+        var normalized = new string(value.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
+        string[] suffixes = ["LIMITED", "LTD", "PLC", "CORPORATION", "CORP", "INCORPORATED", "INC"];
         foreach (var suffix in suffixes)
             if (normalized.EndsWith(suffix, StringComparison.Ordinal) && normalized.Length > suffix.Length)
                 normalized = normalized[..^suffix.Length];
@@ -534,9 +536,10 @@ public sealed class ResumeDocumentMerger
         // Title mismatch — use semantic similarity
         if (existing.Title != null && incoming.Title != null)
         {
-            var simTitle = _embedder.CosineSimilarity(
-                await _embedder.EmbedAsync(existing.Title, ct),
-                await _embedder.EmbedAsync(incoming.Title, ct));
+            var existingTitle = await TryEmbedAsync(existing.Title, ct);
+            var incomingTitle = await TryEmbedAsync(incoming.Title, ct);
+            if (existingTitle is null || incomingTitle is null) return;
+            var simTitle = _embedder.CosineSimilarity(existingTitle, incomingTitle);
 
             if (simTitle < TitleMatchThreshold)
             {
@@ -565,6 +568,24 @@ public sealed class ResumeDocumentMerger
                 });
             }
         }
+    }
+
+    private async Task<float[]?> TryEmbedAsync(string text, CancellationToken ct)
+    {
+        try
+        {
+            return await _embedder.EmbedAsync(text, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Embeddings are optional enrichment; deterministic merging remains available.
+        catch
+        {
+            return null;
+        }
+#pragma warning restore CA1031
     }
 
     private static void MergePersonalInfo(PersonalInfo target, PersonalInfo incoming, string source, List<ImportAnomaly> anomalies)

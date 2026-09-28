@@ -24,7 +24,9 @@ public sealed class JobSpecParser : IJobSpecParser
         ILlmExtractionService? llm = null, ISkillTaxonomy? taxonomy = null,
         IEntityLookup? entityLookup = null)
     {
+        ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(strategySelector);
+        ArgumentNullException.ThrowIfNull(detectors);
         _logger = logger;
         _strategySelector = strategySelector;
         _detectors = detectors;
@@ -37,6 +39,7 @@ public sealed class JobSpecParser : IJobSpecParser
     /// <summary>Constructor for text-only use (no URL scraping). Tests use this.</summary>
     internal JobSpecParser(ILogger<JobSpecParser> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
         _strategySelector = null!;
         _fusionOpts = new FusionOptions();
@@ -44,6 +47,7 @@ public sealed class JobSpecParser : IJobSpecParser
 
     public async Task<JobDescription> ParseFromTextAsync(string text, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(text);
         var job = JobDescription.Create(text, new JobSource { Type = JobSourceType.PastedText });
 
         // Run all extractors in parallel — each produces candidates with confidence
@@ -139,6 +143,10 @@ public sealed class JobSpecParser : IJobSpecParser
             try
             {
                 result = await scraper.ScrapeAsync(uri, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

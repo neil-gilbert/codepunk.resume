@@ -18,6 +18,7 @@ public sealed class JobDecayTracker
 
     public JobFreshness GetFreshness(JobDescription job)
     {
+        ArgumentNullException.ThrowIfNull(job);
         var age = (DateTimeOffset.UtcNow - job.CreatedAt).TotalDays;
         if (age > ExpiredDays) return JobFreshness.Expired;
         if (age > StaleDays) return JobFreshness.Stale;

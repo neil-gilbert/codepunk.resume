@@ -19,6 +19,7 @@ public static class UITestingExtensions
 
     public static AppBuilder UseUITesting(this AppBuilder appBuilder, Action<UITestingOptions>? configure = null)
     {
+        ArgumentNullException.ThrowIfNull(appBuilder);
         var options = new UITestingOptions();
         configure?.Invoke(options);
 
@@ -71,7 +72,7 @@ public class UITestingOptions
     public bool EnableCrossWindowTracking { get; set; } = true;
 }
 
-internal class UITestingStartup
+internal sealed class UITestingStartup
 {
     private readonly UITestingOptions _options;
     private readonly string[] _args;
@@ -125,8 +126,8 @@ internal class UITestingStartup
             {
                 await Task.Delay(500);
 
-                var mcp = new Mcp.UITestMcpServer(ctx, outputDir, _options.ConsoleImagePath);
-                Console.Error.WriteLine($"Window: {window.Title}");
+                await using var mcp = new Mcp.UITestMcpServer(ctx, outputDir, _options.ConsoleImagePath);
+                await Console.Error.WriteLineAsync($"Window: {window.Title}");
 
                 await mcp.RunStdioAsync();
 
@@ -141,7 +142,7 @@ internal class UITestingStartup
             {
                 await Task.Delay(500);
 
-                var repl = new Repl.UITestRepl(ctx, outputDir, _options.ConsoleImagePath);
+                await using var repl = new Repl.UITestRepl(ctx, outputDir, _options.ConsoleImagePath);
 
                 Console.WriteLine("\n=== UI Testing REPL ===");
                 Console.WriteLine($"Window: {window.Title}");
@@ -175,7 +176,7 @@ internal class UITestingStartup
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[{label}] {ex.GetType().Name}: {ex.Message}");
+            await Console.Error.WriteLineAsync($"[{label}] {ex.GetType().Name}: {ex.Message}");
             _options.Log?.Invoke($"[{label}] {ex}");
         }
     }
@@ -200,7 +201,7 @@ internal class UITestingStartup
 
             Directory.CreateDirectory(outputDir);
 
-            var player = new Players.ScriptPlayer(outputDir, _options.DefaultDelay, _options.CaptureScreenshotsByDefault, ctx);
+            await using var player = new Players.ScriptPlayer(outputDir, _options.DefaultDelay, _options.CaptureScreenshotsByDefault, ctx);
 
             if (navigateAction != null)
                 player.SetNavigateAction(navigateAction);

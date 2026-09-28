@@ -199,7 +199,10 @@ workflow. It does not ingest LinkedIn exports, repositories, or old CVs. That
 happens upstream in the desktop application. The control accepts the already
 exported Markdown + JobML `career_record`, publishes an immutable revision,
 accepts a job description, and returns a shorter evidence-bounded projection with
-Markdown, Word, and PDF downloads. The application career ledger remains the
+Markdown, Word, and PDF downloads. Each published application receives an opaque
+URL whose browser view shows the résumé, its selected claims, and links into the
+complete transcript. The same publication exposes full JobML and cJobML to machine
+clients. The application career ledger remains the
 canonical source; the published JobML document is its portable projection.
 OpenAI is the default interactive editor. The local LLamaSharp path batches the
 projection in ordered groups of three and can recover complete section objects
@@ -225,9 +228,10 @@ Run the included host with:
 dotnet run --project samples/lucidRESUME.Web.Sample
 ```
 
-The current master is served at `/lucidresume/api/jobml`; immutable revisions are
-served at `/lucidresume/api/jobml/{revision}` with ETags and long-lived cache
-headers. API keys remain server-side. See the
+The control is mounted at `/resume` by default. The current career-record
+projection is served at `/resume/api/jobml`; immutable source revisions and
+application-specific publication URLs carry ETags and cache headers. API keys
+remain server-side. See the
 [web compiler guide](docs/jobml-web-compiler.md).
 
 ### Personal ATS (Pipeline)
@@ -426,8 +430,8 @@ lucidRESUME (Avalonia UI: My CV, JobML Editor, My Data, Career, Jobs, Add Job, P
     ├── Web              Embeddable ASP.NET Core publish, preview, and export control
     ├── EmailTracker     IMAP scanning, email classification, application matching
     ├── Export           JSON Resume + Markdown + DOCX + PDF exporters
-    ├── Collabora        LibreOffice/editor integration, document openers
-    ├── UXTesting        UI automation framework (REPL, MCP, script runner)
+    ├── Collabora        Installed-editor discovery and LibreOffice fallback
+    ├── Avalonia.UITesting  UI automation framework (REPL, MCP, script runner)
     └── Core             Domain models, interfaces, persistence (SQLite + sqlite-vec)
 ```
 
@@ -450,7 +454,7 @@ lucidRESUME (Avalonia UI: My CV, JobML Editor, My Data, Career, Jobs, Add Job, P
 ## Tests
 
 ```bash
-dotnet test lucidRESUME.sln    # 496 tests across 13 projects
+dotnet test lucidRESUME.sln    # 460 tests across 12 projects
 ```
 
 | Project | Tests | Coverage |
@@ -458,7 +462,7 @@ dotnet test lucidRESUME.sln    # 496 tests across 13 projects
 | Core.Tests | 92 | Persistence, models, multi-resume, export, linked posts |
 | Extraction.Tests | 25 | NER, recognizers, RRF fusion pipeline |
 | AI.Tests | 46 | Providers, embeddings, bounded decisions, deterministic projection, gated live OpenAI checks |
-| Matching.Tests | 58 | Skill scoring, filters, voting, projection quality |
+| Matching.Tests | 62 | Skill scoring, filters, voting, job-search resilience, projection quality |
 | JobSpec.Tests | 15 | JD parsing, salary extraction |
 | EmailTracker.Tests | 25 | Classifier, matcher |
 | GitHub.Tests | 37 | Language map, repository assessment, package families, LinkedIn parsing, document merge |
@@ -466,7 +470,6 @@ dotnet test lucidRESUME.sln    # 496 tests across 13 projects
 | Compiler.Tests | 24 | Deterministic evidence selection, compact chronology and projection orchestration |
 | Web.Tests | 5 | ASP.NET Core endpoint and projection control |
 | App.Tests | 2 | Native operating-system credential storage |
-| UXTesting.Tests | 40 | Acceptance commands, script loading and execution context |
 | Avalonia.UITesting.Tests | 98 | Input, scripts, locators, screenshots, REPL |
 
 The Chrome evidence filler has a separate TypeScript suite:

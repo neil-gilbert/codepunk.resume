@@ -13,6 +13,8 @@ public sealed class JobMlDraftGenerator
 
     public static JobMlFile Generate(string markdown, string language = "en-GB")
     {
+        ArgumentNullException.ThrowIfNull(markdown);
+        ArgumentException.ThrowIfNullOrWhiteSpace(language);
         var anchoredMarkdown = AddStableHeadingAnchors(markdown);
         var index = MarkdownEvidenceIndex.Create(anchoredMarkdown);
         var documentName = FirstHeadingPattern.Match(anchoredMarkdown).Groups["title"].Value;
@@ -69,6 +71,7 @@ public sealed class JobMlDraftGenerator
 
     public static string AddStableHeadingAnchors(string markdown)
     {
+        ArgumentNullException.ThrowIfNull(markdown);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         return HeadingPattern.Replace(MarkdownEvidenceIndex.NormalizeNewlines(markdown), match =>
         {
@@ -89,10 +92,11 @@ public sealed class JobMlDraftGenerator
     private static string InferEntityType(string? section)
     {
         var value = section?.ToLowerInvariant() ?? "";
-        if (value.Contains("project")) return "project";
-        if (value.Contains("education")) return "education";
-        if (value.Contains("qualification") || value.Contains("certif")) return "qualification";
-        if (value.Contains("publication")) return "publication";
+        if (value.Contains("project", StringComparison.Ordinal)) return "project";
+        if (value.Contains("education", StringComparison.Ordinal)) return "education";
+        if (value.Contains("qualification", StringComparison.Ordinal) ||
+            value.Contains("certif", StringComparison.Ordinal)) return "qualification";
+        if (value.Contains("publication", StringComparison.Ordinal)) return "publication";
         return "experience";
     }
 

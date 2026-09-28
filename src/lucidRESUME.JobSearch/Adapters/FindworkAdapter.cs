@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Serialization;
+using System.Globalization;
 using lucidRESUME.Core.Interfaces;
 using lucidRESUME.Core.Models.Jobs;
 using Microsoft.Extensions.Options;
@@ -22,20 +23,23 @@ public sealed class FindworkAdapter : IJobSearchAdapter
 
     public FindworkAdapter(HttpClient http, IOptions<FindworkOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(options);
         _http = http;
         _options = options.Value;
     }
 
     public async Task<IReadOnlyList<JobDescription>> SearchAsync(JobSearchQuery query, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         if (!IsConfigured) return [];
 
         var url = $"https://findwork.dev/api/jobs/?search={Uri.EscapeDataString(query.Keywords)}&remote=true";
 
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Token", _options.ApiKey);
 
-        var response = await _http.SendAsync(request, ct);
+        using var response = await _http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var result = await response.Content.ReadFromJsonAsync<FindworkResponse>(ct);
@@ -48,7 +52,7 @@ public sealed class FindworkAdapter : IJobSearchAdapter
         {
             Type = JobSourceType.Findwork,
             Url = r.Url,
-            ExternalId = r.Id.ToString()
+            ExternalId = r.Id.ToString(CultureInfo.InvariantCulture)
         });
         job.Title = r.Role;
         job.Company = r.CompanyName;
@@ -57,10 +61,10 @@ public sealed class FindworkAdapter : IJobSearchAdapter
         return job;
     }
 
-    private record FindworkResponse(
+    private sealed record FindworkResponse(
         [property: JsonPropertyName("results")] List<FindworkResult> Results);
 
-    private record FindworkResult(
+    private sealed record FindworkResult(
         [property: JsonPropertyName("id")] int Id,
         [property: JsonPropertyName("role")] string? Role,
         [property: JsonPropertyName("company_name")] string? CompanyName,

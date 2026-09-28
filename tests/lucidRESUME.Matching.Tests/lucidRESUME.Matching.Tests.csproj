@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\lucidRESUME.Core\lucidRESUME.Core.csproj" />
     <ProjectReference Include="..\..\src\lucidRESUME.Matching\lucidRESUME.Matching.csproj" />
+    <ProjectReference Include="..\..\src\lucidRESUME.JobSearch\lucidRESUME.JobSearch.csproj" />
   </ItemGroup>
 
 </Project>

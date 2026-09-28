@@ -18,7 +18,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Page_explains_career_record_to_resume_projection_flow()
     {
-        var html = await _client.GetStringAsync("/lucidresume/");
+        var html = await _client.GetStringAsync("/resume/");
         Assert.Contains("Career record", html);
         Assert.Contains("complete human career transcript", html);
         Assert.Contains("JobML career_record projection", html);
@@ -28,7 +28,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Mutation_without_antiforgery_token_is_rejected()
     {
-        var response = await _client.PostAsync("/lucidresume/api/ledger",
+        var response = await _client.PostAsync("/resume/api/ledger",
             new StringContent("not a ledger", Encoding.UTF8, "text/markdown"));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -36,10 +36,10 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Compile_rejects_oversized_job_description_before_running_compiler()
     {
-        var html = await _client.GetStringAsync("/lucidresume/");
+        var html = await _client.GetStringAsync("/resume/");
         var token = Regex.Match(html, "const token='(?<token>[^']+)'", RegexOptions.CultureInvariant)
             .Groups["token"].Value;
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/lucidresume/api/compile");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/resume/api/compile");
         request.Headers.Add("X-CSRF-TOKEN", token);
         request.Content = new StringContent(
             JsonSerializer.Serialize(new { jobDescription = new string('x', 262145) }),
@@ -53,7 +53,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Career_record_endpoint_rejects_a_role_specific_profile()
     {
-        var html = await _client.GetStringAsync("/lucidresume/");
+        var html = await _client.GetStringAsync("/resume/");
         var token = Regex.Match(html, "const token='(?<token>[^']+)'", RegexOptions.CultureInvariant)
             .Groups["token"].Value;
         const string source = """
@@ -74,7 +74,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
             concepts: []
             ```
             """;
-        using var publish = new HttpRequestMessage(HttpMethod.Post, "/lucidresume/api/career-record");
+        using var publish = new HttpRequestMessage(HttpMethod.Post, "/resume/api/career-record");
         publish.Headers.Add("X-CSRF-TOKEN", token);
         publish.Content = new StringContent(source, Encoding.UTF8, "text/markdown");
 
@@ -88,7 +88,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
     [Fact]
     public async Task Career_record_is_published_compiled_and_exported_end_to_end()
     {
-        var html = await _client.GetStringAsync("/lucidresume/");
+        var html = await _client.GetStringAsync("/resume/");
         var token = Regex.Match(html, "const token='(?<token>[^']+)'", RegexOptions.CultureInvariant)
             .Groups["token"].Value;
         const string prose = "Led a TypeScript engineering team through platform change on AWS.";
@@ -245,7 +245,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
                 name: Engineering Leadership
             ```
             """;
-        using var publish = new HttpRequestMessage(HttpMethod.Post, "/lucidresume/api/career-record");
+        using var publish = new HttpRequestMessage(HttpMethod.Post, "/resume/api/career-record");
         publish.Headers.Add("X-CSRF-TOKEN", token);
         publish.Content = new StringContent(source, Encoding.UTF8, "text/markdown");
 
@@ -253,15 +253,13 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         var publicationPayload = await published.Content.ReadAsStringAsync();
         Assert.True(published.StatusCode == HttpStatusCode.OK,
             $"Expected career record publication to succeed, got {(int)published.StatusCode}: {publicationPayload}");
-        using var publicationJson = JsonDocument.Parse(publicationPayload);
-        var revision = publicationJson.RootElement.GetProperty("revision").GetString()!;
-
-        using var compile = new HttpRequestMessage(HttpMethod.Post, "/lucidresume/api/compile");
+        using var compile = new HttpRequestMessage(HttpMethod.Post, "/resume/api/compile");
         compile.Headers.Add("X-CSRF-TOKEN", token);
         compile.Content = new StringContent(JsonSerializer.Serialize(new
         {
             jobDescription = "Head of Engineering. TypeScript and AWS experience required. Lead engineering change.",
-            polish = false
+            polish = false,
+            applicationReference = "Example Ltd, Head of Engineering"
         }), Encoding.UTF8, "application/json");
         var compiled = await _client.SendAsync(compile);
         var payload = await compiled.Content.ReadAsStringAsync();
@@ -269,13 +267,16 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Equal(HttpStatusCode.OK, compiled.StatusCode);
         Assert.Contains(prose, payload);
         Assert.Contains("cJobML 0.1", payload);
-        Assert.Contains("/api/export/", payload);
 
         using var json = JsonDocument.Parse(payload);
         Assert.Equal("Head of Engineering",
             json.RootElement.GetProperty("manifest").GetProperty("targetTitle").GetString());
+        var publicationUrl = json.RootElement.GetProperty("publication").GetProperty("url").GetString()!;
+        Assert.Matches(@"^/resume/[A-Za-z0-9_-]{32}$", publicationUrl);
+        Assert.Equal("Example Ltd, Head of Engineering",
+            json.RootElement.GetProperty("publication").GetProperty("applicationReference").GetString());
         var publishedMarkdown = json.RootElement.GetProperty("publishedMarkdown").GetString()!;
-        var fullRecordUri = $"http://localhost/lucidresume/api/jobml/{revision}";
+        var fullRecordUri = $"http://localhost{publicationUrl}/jobml";
         Assert.Contains($"Full JobML: <{fullRecordUri}>", publishedMarkdown);
         Assert.Contains($"<{fullRecordUri}#example-role>", publishedMarkdown);
         Assert.Contains("[Career Transcript]", publishedMarkdown);
@@ -299,7 +300,34 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         var relationshipsXml = await relationshipsReader.ReadToEndAsync();
         Assert.Contains($"{fullRecordUri}#example-role", relationshipsXml);
 
-        var fullJobMl = await _client.GetStringAsync("/lucidresume/api/jobml");
+        var evidencePage = await _client.GetStringAsync(publicationUrl);
+        Assert.Contains("Evidence behind this résumé", evidencePage);
+        Assert.Contains("Read this section in the complete transcript", evidencePage);
+        Assert.Contains("Reviewed source passage:", evidencePage);
+        Assert.Contains("Example Ltd, Head of Engineering", evidencePage);
+        Assert.Contains(prose, evidencePage);
+
+        var roleJobMl = await _client.GetStringAsync(publicationUrl + "/jobml");
+        Assert.Contains("profile: resume", roleJobMl);
+        Assert.Contains("full_jobml:", roleJobMl);
+
+        using var browserJobMlRequest = new HttpRequestMessage(HttpMethod.Get, publicationUrl + "/jobml");
+        browserJobMlRequest.Headers.Accept.ParseAdd("text/html");
+        using var browserJobMl = await _client.SendAsync(browserJobMlRequest);
+        var browserEvidencePage = await browserJobMl.Content.ReadAsStringAsync();
+        Assert.Equal("text/html", browserJobMl.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Evidence behind this résumé", browserEvidencePage);
+        Assert.Contains("id=\"example-role\"", browserEvidencePage);
+
+        using var browserTranscriptRequest = new HttpRequestMessage(HttpMethod.Get, publicationUrl + "/transcript");
+        browserTranscriptRequest.Headers.Accept.ParseAdd("text/html");
+        using var browserTranscript = await _client.SendAsync(browserTranscriptRequest);
+        var transcriptPage = await browserTranscript.Content.ReadAsStringAsync();
+        Assert.Contains("Complete career transcript", transcriptPage);
+        Assert.Contains(prose, transcriptPage);
+        Assert.Contains("id=\"example-role\"", transcriptPage);
+
+        var fullJobMl = await _client.GetStringAsync("/resume/api/jobml");
         Assert.Contains("profile: career_record", fullJobMl);
     }
 }

@@ -24,10 +24,16 @@ public sealed class ResumeRecognizerDetector : IEntityDetector
 
     private readonly ILogger<ResumeRecognizerDetector> _logger;
 
-    public ResumeRecognizerDetector(ILogger<ResumeRecognizerDetector> logger) => _logger = logger;
+    public ResumeRecognizerDetector(ILogger<ResumeRecognizerDetector> logger)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger;
+    }
 
     public Task<IReadOnlyList<ExtractedEntity>> DetectAsync(DetectionContext context, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ct.ThrowIfCancellationRequested();
         var entities = new List<ExtractedEntity>();
 
         DetectEmails(context, entities);

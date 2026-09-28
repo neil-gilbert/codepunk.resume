@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
@@ -105,7 +106,7 @@ public sealed class DocxDirectParser : IDocumentParser
                         };
 
                         var prefix = new string('#', headingLevel + 1); // h1→##, h2→###
-                        sb.AppendLine($"{prefix} {text}");
+                        sb.AppendLine(CultureInfo.InvariantCulture, $"{prefix} {text}");
                         plain.AppendLine(text);
                     }
                     else
@@ -137,6 +138,10 @@ public sealed class DocxDirectParser : IDocumentParser
                 Confidence = confidence,
                 TemplateName = matchedTemplate?.Name
             };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch
         {
@@ -372,7 +377,9 @@ public sealed class DocxDirectParser : IDocumentParser
         }
 
         // ── 3. ALL-CAPS catch-all for headings not in training data ────────────
-        var allCaps = text.Length < 60 && text == text.ToUpperInvariant() && text.Any(char.IsLetter);
+        var allCaps = text.Length < 60
+            && text.Equals(text.ToUpperInvariant(), StringComparison.Ordinal)
+            && text.Any(char.IsLetter);
         if (allCaps)
         {
             var semantic = hints.MapSection(text);
@@ -388,7 +395,9 @@ public sealed class DocxDirectParser : IDocumentParser
     /// </summary>
     private static int DetectHeadingLevelTextOnly(string text)
     {
-        if (text.Length < 60 && text == text.ToUpperInvariant() && text.Any(char.IsLetter))
+        if (text.Length < 60
+            && text.Equals(text.ToUpperInvariant(), StringComparison.Ordinal)
+            && text.Any(char.IsLetter))
             return 2;
         return 0;
     }
@@ -409,12 +418,14 @@ public sealed class DocxDirectParser : IDocumentParser
             {
                 var sn = styleName.ToLowerInvariant();
                 if (sn.Contains("heading") || sn.Contains("title") || sn.Contains("section"))
-                    return sn.Contains("2") || sn.Contains("sub") ? 2 : 1;
+                    return sn.Contains('2') || sn.Contains("sub") ? 2 : 1;
             }
         }
 
         var isBold = para.Descendants<Bold>().Any();
-        if (isBold && text.Length < 60 && text == text.ToUpperInvariant() && text.Any(char.IsLetter))
+        if (isBold && text.Length < 60
+            && text.Equals(text.ToUpperInvariant(), StringComparison.Ordinal)
+            && text.Any(char.IsLetter))
             return 2;
 
         // Bold short text that matches a known section keyword = heading
@@ -423,7 +434,7 @@ public sealed class DocxDirectParser : IDocumentParser
             return 2;
 
         if (text.Length < 50 && text.Length > 3
-            && text == text.ToUpperInvariant()
+            && text.Equals(text.ToUpperInvariant(), StringComparison.Ordinal)
             && text.Any(char.IsLetter)
             && !text.Contains(','))
             return 2;

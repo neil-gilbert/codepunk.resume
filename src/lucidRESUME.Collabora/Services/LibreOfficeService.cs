@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 
 namespace lucidRESUME.Collabora.Services;
@@ -50,27 +51,14 @@ public sealed class LibreOfficeService
         foreach (var path in candidates)
             if (File.Exists(path)) return path;
 
-        // Fall back to PATH lookup
+        // Resolve PATH directly; discovery must not launch an editor process.
         var exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "soffice.exe" : "soffice";
-        try
+        var searchPath = Environment.GetEnvironmentVariable("PATH");
+        foreach (var directory in searchPath?.Split(Path.PathSeparator,
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [])
         {
-            using var p = Process.Start(new ProcessStartInfo
-            {
-                FileName = exeName,
-                Arguments = "--version",
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            });
-
-            if (p != null)
-            {
-                p.WaitForExit(2000);
-                return exeName;
-            }
+            if (File.Exists(Path.Combine(directory, exeName))) return exeName;
         }
-        catch { /* not in PATH */ }
 
         return null;
     }
@@ -80,13 +68,14 @@ public sealed class LibreOfficeService
     {
         if (_executablePath == null || !File.Exists(filePath)) return;
 
-        Process.Start(new ProcessStartInfo
+        var startInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
-            Arguments = $"\"{filePath}\"",
             UseShellExecute = false,
             CreateNoWindow = false
-        });
+        };
+        startInfo.ArgumentList.Add(filePath);
+        Process.Start(startInfo);
     }
 
     /// <summary>
@@ -101,21 +90,20 @@ public sealed class LibreOfficeService
 
         Directory.CreateDirectory(outputDir);
 
-        var ext = Path.GetExtension(filePath).ToLowerInvariant();
         var workFile = filePath;
         string? tempPdf = null;
 
         // Convert non-PDF formats to PDF first for reliable page splitting
-        if (ext != ".pdf")
+        if (!Path.GetExtension(filePath).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
         {
             tempPdf = Path.Combine(outputDir, Path.GetFileNameWithoutExtension(filePath) + ".pdf");
-            var ok = await RunAsync($"--headless --convert-to pdf --outdir \"{outputDir}\" \"{filePath}\"", ct);
+            var ok = await RunAsync(["--headless", "--convert-to", "pdf", "--outdir", outputDir, filePath], ct);
             if (!ok || !File.Exists(tempPdf)) return [];
             workFile = tempPdf;
         }
 
         // Convert PDF to PNG (one file per page)
-        await RunAsync($"--headless --convert-to png --outdir \"{outputDir}\" \"{workFile}\"", ct);
+        await RunAsync(["--headless", "--convert-to", "png", "--outdir", outputDir, workFile], ct);
 
         if (tempPdf != null && File.Exists(tempPdf))
             File.Delete(tempPdf);
@@ -124,25 +112,26 @@ public sealed class LibreOfficeService
         return [.. Directory.GetFiles(outputDir, $"{baseName}*.png").Order()];
     }
 
-    private async Task<bool> RunAsync(string arguments, CancellationToken ct)
+    private async Task<bool> RunAsync(IReadOnlyList<string> arguments, CancellationToken ct)
     {
         try
         {
-            using var p = Process.Start(new ProcessStartInfo
+            var startInfo = new ProcessStartInfo
             {
                 FileName = _executablePath!,
-                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
-            });
+            };
+            foreach (var argument in arguments) startInfo.ArgumentList.Add(argument);
+            using var p = Process.Start(startInfo);
 
             if (p == null) return false;
             await p.WaitForExitAsync(ct);
             return p.ExitCode == 0;
         }
-        catch
+        catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
         {
             return false;
         }

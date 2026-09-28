@@ -45,6 +45,7 @@ public sealed class UITestSession : IAsyncDisposable
 
     public static Task<UITestSession> AttachAsync(Window window, Action<UITestSessionOptions>? configure = null)
     {
+        ArgumentNullException.ThrowIfNull(window);
         var options = new UITestSessionOptions();
         configure?.Invoke(options);
 
@@ -93,6 +94,7 @@ public sealed class UITestSession : IAsyncDisposable
     /// <summary>Click a control identified by a programmatic <see cref="Locator"/>.</summary>
     public async Task ClickAsync(Locator locator, string? windowId = null)
     {
+        ArgumentNullException.ThrowIfNull(locator);
         var window = _context.FindWindow(windowId) ?? _window;
         var control = await _locators.ResolveFirstAsync(locator, window);
 
@@ -120,6 +122,7 @@ public sealed class UITestSession : IAsyncDisposable
 
     public async Task DoubleClickAsync(Locator locator, string? windowId = null)
     {
+        ArgumentNullException.ThrowIfNull(locator);
         var window = _context.FindWindow(windowId) ?? _window;
         var control = await _locators.ResolveFirstAsync(locator, window);
         await RunOnUIThreadAsync(() =>
@@ -133,6 +136,8 @@ public sealed class UITestSession : IAsyncDisposable
 
     public async Task TypeAsync(Locator locator, string text, string? windowId = null)
     {
+        ArgumentNullException.ThrowIfNull(locator);
+        ArgumentNullException.ThrowIfNull(text);
         var window = _context.FindWindow(windowId) ?? _window;
         var control = await _locators.ResolveFirstAsync(locator, window);
         await RunOnUIThreadAsync(() =>
@@ -394,6 +399,7 @@ public sealed class UITestSession : IAsyncDisposable
     /// <summary>Snip the bounding box of multiple named controls (e.g. a label + textbox + button group).</summary>
     public async Task<string> SnipControlsAsync(IEnumerable<string> controlNames, string? name = null, double padding = 0, string? windowId = null)
     {
+        ArgumentNullException.ThrowIfNull(controlNames);
         var safeName = name ?? $"snip_group_{DateTime.UtcNow:HHmmss_fff}";
         var filePath = Path.Combine(_screenshotDir, $"{safeName}.png");
         var window = _context.FindWindow(windowId) ?? _window;

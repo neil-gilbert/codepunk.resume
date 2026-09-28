@@ -55,6 +55,7 @@ public sealed class AppState
 
     public void AddOrReplaceResume(ResumeDocument resume, bool select = true)
     {
+        ArgumentNullException.ThrowIfNull(resume);
         var index = Resumes.FindIndex(r => r.ResumeId == resume.ResumeId);
         if (index >= 0)
             Resumes[index] = resume;
@@ -293,8 +294,11 @@ public sealed class AppState
         }
     }
 
-    public static string CareerAnchorRoleKey(WorkExperience experience) =>
-        $"{NormalizeCompany(experience.Company ?? "")}|{NormalizeIdentity(experience.Title ?? "")}";
+    public static string CareerAnchorRoleKey(WorkExperience experience)
+    {
+        ArgumentNullException.ThrowIfNull(experience);
+        return $"{NormalizeCompany(experience.Company ?? "")}|{NormalizeIdentity(experience.Title ?? "")}";
+    }
 
     private static string NormalizeIdentity(string value) =>
         string.Join(' ', value.Trim().ToLowerInvariant()

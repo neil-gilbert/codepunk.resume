@@ -56,6 +56,6 @@ public sealed class TxtParser : IDocumentParser
 
     private static bool IsHeading(string line) =>
         line.Length > 0 && line.Length <= 60
-        && line == line.ToUpperInvariant()
+        && line.Equals(line.ToUpperInvariant(), StringComparison.Ordinal)
         && line.Any(char.IsLetter);
 }

@@ -45,22 +45,29 @@ public static class EducationLevelClassifier
     public static EducationLevel Classify(string? degree)
     {
         if (string.IsNullOrWhiteSpace(degree)) return EducationLevel.Unknown;
-        var lower = $" {degree.ToLowerInvariant()} ";
+        var text = $" {degree} ";
 
         // Basic heuristics as fallback when the full EducationEquivalence isn't loaded
         // (e.g. in Core-only contexts without Matching module).
         // The real classification should use EducationEquivalence.Default.GetIscedLevel()
-        if (lower.Contains("phd") || lower.Contains("doctorate") || lower.Contains("dphil"))
+        if (text.Contains("phd", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("doctorate", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("dphil", StringComparison.OrdinalIgnoreCase))
             return EducationLevel.Doctoral;
-        if (lower.Contains("master") || lower.Contains("msc") || lower.Contains("mba") || lower.Contains("meng"))
+        if (text.Contains("master", StringComparison.OrdinalIgnoreCase) || text.Contains("msc", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("mba", StringComparison.OrdinalIgnoreCase) || text.Contains("meng", StringComparison.OrdinalIgnoreCase))
             return EducationLevel.Masters;
-        if (lower.Contains("bachelor") || lower.Contains("bsc") || lower.Contains("beng") || lower.Contains("hons"))
+        if (text.Contains("bachelor", StringComparison.OrdinalIgnoreCase) || text.Contains("bsc", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("beng", StringComparison.OrdinalIgnoreCase) || text.Contains("hons", StringComparison.OrdinalIgnoreCase))
             return EducationLevel.Bachelors;
-        if (lower.Contains("hnd") || lower.Contains("hnc") || lower.Contains("btec"))
+        if (text.Contains("hnd", StringComparison.OrdinalIgnoreCase) || text.Contains("hnc", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("btec", StringComparison.OrdinalIgnoreCase))
             return EducationLevel.Vocational;
-        if (lower.Contains("a-level") || lower.Contains("higher") || lower.Contains("abitur"))
+        if (text.Contains("a-level", StringComparison.OrdinalIgnoreCase) || text.Contains("higher", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("abitur", StringComparison.OrdinalIgnoreCase))
             return EducationLevel.PostSecondary;
-        if (lower.Contains("gcse") || lower.Contains("o-level") || lower.Contains("high school"))
+        if (text.Contains("gcse", StringComparison.OrdinalIgnoreCase) || text.Contains("o-level", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("high school", StringComparison.OrdinalIgnoreCase))
             return EducationLevel.SecondarySchool;
 
         return EducationLevel.Unknown;

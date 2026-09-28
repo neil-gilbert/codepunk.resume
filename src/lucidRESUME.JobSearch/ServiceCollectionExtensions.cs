@@ -9,6 +9,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddJobSearch(this IServiceCollection services, IConfiguration config)
     {
+        ArgumentNullException.ThrowIfNull(config);
         // Key-auth adapters: options binding
         services.Configure<AdzunaOptions>(config.GetSection("Adzuna"));
         services.Configure<ReedOptions>(config.GetSection("Reed"));
@@ -35,8 +36,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<JobSearchService>();
         services.AddSingleton<SearchWatchPoller>();
 
-        services.AddSingleton<RoleSuggestionService>();
-        services.AddSingleton<JobDeduplicator>();
         services.AddScoped<JobSearchOrchestrator>();
 
         return services;

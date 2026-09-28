@@ -88,7 +88,7 @@ public partial class App : Application
         services.AddMatching(config);
         services.AddAiTailoring(config);
         services.AddExport();
-        services.AddCollabora(config);
+        services.AddDocumentTools();
         services.AddEmailTracker(config);
         services.AddGitHub(config);
 

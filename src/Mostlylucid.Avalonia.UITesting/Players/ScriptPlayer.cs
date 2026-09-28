@@ -15,7 +15,7 @@ using Mostlylucid.Avalonia.UITesting.Video;
 
 namespace Mostlylucid.Avalonia.UITesting.Players;
 
-public sealed class ScriptPlayer
+public sealed class ScriptPlayer : IAsyncDisposable
 {
     private readonly string _screenshotDir;
     private readonly int _defaultDelay;
@@ -47,6 +47,8 @@ public sealed class ScriptPlayer
 
     public async Task<UITestResult> RunScriptAsync(Window window, UIScript script)
     {
+        ArgumentNullException.ThrowIfNull(window);
+        ArgumentNullException.ThrowIfNull(script);
         _window = window;
         _context.MainWindow = window;
         _context.EnableCrossWindowTracking();
@@ -1206,6 +1208,15 @@ public sealed class ScriptPlayer
         var sizeKb = new FileInfo(filePath).Length / 1024;
         Log?.Invoke(this, $"    SVG saved: {filePath} ({sizeKb}KB)");
         result.ScreenshotPath = filePath;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_videoRecorder is not null)
+        {
+            await _videoRecorder.DisposeAsync();
+            _videoRecorder = null;
+        }
     }
 
     private Window? GetTargetWindow(string? windowId)

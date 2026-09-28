@@ -15,7 +15,7 @@ using Mostlylucid.Avalonia.UITesting.Video;
 
 namespace Mostlylucid.Avalonia.UITesting.Mcp;
 
-public sealed class UITestMcpServer
+public sealed class UITestMcpServer : IAsyncDisposable
 {
     private static readonly JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
     private readonly UITestContext _ctx;
@@ -28,6 +28,7 @@ public sealed class UITestMcpServer
 
     public UITestMcpServer(UITestContext context, string screenshotDir = "ux-screenshots", string? consoleImagePath = null)
     {
+        ArgumentNullException.ThrowIfNull(context);
         _ctx = context;
         _screenshotDir = screenshotDir;
         _consoleImagePath = consoleImagePath ?? "consoleimage";
@@ -36,7 +37,7 @@ public sealed class UITestMcpServer
 
     public async Task RunStdioAsync()
     {
-        Console.Error.WriteLine("UI Test MCP Server starting (stdio mode)...");
+        await Console.Error.WriteLineAsync("UI Test MCP Server starting (stdio mode)...");
 
         using var stdin = Console.OpenStandardInput();
         using var stdout = Console.OpenStandardOutput();
@@ -56,7 +57,7 @@ public sealed class UITestMcpServer
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error: {ex.Message}");
+                await Console.Error.WriteLineAsync($"Error: {ex.Message}");
             }
         }
     }
@@ -1038,13 +1039,21 @@ public sealed class UITestMcpServer
             ? Scripts.ScriptLoader.LoadFromJson(path)
             : Scripts.ScriptLoader.LoadFromYaml(path);
 
-        var player = new Players.ScriptPlayer(_screenshotDir, context: _ctx);
+        await using var player = new Players.ScriptPlayer(_screenshotDir, context: _ctx);
         if (_ctx.Navigate != null) player.SetNavigateAction(_ctx.Navigate);
 
         var result = await player.RunScriptAsync((_ctx.MainWindow ?? throw new InvalidOperationException("No main window attached to UITestContext")), script);
 
         var json = JsonSerializer.Serialize(result, IndentedJsonOptions);
         return $"Script: {script.Name}\nResult: {(result.Success ? "PASS" : "FAIL")}\nActions: {result.ActionResults.Count}\nDuration: {result.Duration.TotalSeconds:F2}s\n\n{json}";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_recorder is not null)
+            await _recorder.DisposeAsync();
+        if (_videoRecorder is not null)
+            await _videoRecorder.DisposeAsync();
     }
 
     // === Exit ===

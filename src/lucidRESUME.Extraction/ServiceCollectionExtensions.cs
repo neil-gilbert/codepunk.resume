@@ -12,6 +12,8 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddExtraction(this IServiceCollection services, IConfiguration config)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(config);
         services.AddSingleton<IEntityDetector, ResumeRecognizerDetector>();
 
         // General NER (dslim/bert-base-NER): PER, ORG, LOC, MISC - high accuracy for names

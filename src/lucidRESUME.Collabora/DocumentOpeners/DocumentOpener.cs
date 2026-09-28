@@ -25,56 +25,52 @@ public class DocumentOpener
         // macOS: use `open -a AppName` for app bundles, or just `open` for system default
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && _macAppName is not null)
         {
-            Process.Start(new ProcessStartInfo
+            var startInfo = new ProcessStartInfo
             {
                 FileName = "open",
-                Arguments = $"-a \"{_macAppName}\" \"{filePath}\"",
                 UseShellExecute = false,
                 CreateNoWindow = false
-            });
+            };
+            startInfo.ArgumentList.Add("-a");
+            startInfo.ArgumentList.Add(_macAppName);
+            startInfo.ArgumentList.Add(filePath);
+            Process.Start(startInfo);
             return;
         }
 
-        Process.Start(new ProcessStartInfo
+        var editorStartInfo = new ProcessStartInfo
         {
             FileName = _executablePath,
-            Arguments = $"\"{filePath}\"",
             UseShellExecute = false,
             CreateNoWindow = false
-        });
+        };
+        editorStartInfo.ArgumentList.Add(filePath);
+        Process.Start(editorStartInfo);
     }
 
     /// <summary>Try to create an opener if the executable exists.</summary>
     public static DocumentOpener? TryCreate(string name, params string[] candidatePaths)
     {
+        ArgumentNullException.ThrowIfNull(candidatePaths);
         foreach (var path in candidatePaths)
         {
             if (File.Exists(path))
                 return new DocumentOpener(name, path);
         }
 
-        // Try PATH lookup (e.g. soffice, wps on Linux)
+        // Resolve PATH directly. Probing by launching the editor can leave a GUI
+        // process behind and makes discovery itself observable to the user.
         var exeName = candidatePaths.LastOrDefault() ?? "";
-        if (!exeName.Contains(Path.DirectorySeparatorChar) && !exeName.Contains('/'))
+        if (!exeName.Contains(Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
+            !exeName.Contains('/', StringComparison.Ordinal))
         {
-            try
+            var path = Environment.GetEnvironmentVariable("PATH");
+            foreach (var directory in path?.Split(Path.PathSeparator,
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [])
             {
-                using var p = Process.Start(new ProcessStartInfo
-                {
-                    FileName = exeName,
-                    Arguments = "--version",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                });
-                if (p != null)
-                {
-                    p.WaitForExit(2000);
+                if (File.Exists(Path.Combine(directory, exeName)))
                     return new DocumentOpener(name, exeName);
-                }
             }
-            catch { /* not in PATH */ }
         }
 
         return null;

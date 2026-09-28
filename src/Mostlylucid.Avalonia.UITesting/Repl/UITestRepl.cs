@@ -12,7 +12,7 @@ using Mostlylucid.Avalonia.UITesting.Scripts;
 
 namespace Mostlylucid.Avalonia.UITesting.Repl;
 
-public sealed class UITestRepl
+public sealed class UITestRepl : IAsyncDisposable
 {
     private readonly UITestContext _ctx;
     private readonly string _screenshotDir;
@@ -23,6 +23,7 @@ public sealed class UITestRepl
 
     public UITestRepl(UITestContext context, string screenshotDir = "ux-screenshots", string? consoleImagePath = null)
     {
+        ArgumentNullException.ThrowIfNull(context);
         _ctx = context;
         _screenshotDir = screenshotDir;
         _consoleImagePath = consoleImagePath ?? "consoleimage";
@@ -56,6 +57,7 @@ public sealed class UITestRepl
 
     public async Task<string> ExecuteCommandAsync(string line)
     {
+        ArgumentNullException.ThrowIfNull(line);
         var parts = SplitCommand(line);
         if (parts.Length == 0) return "";
 
@@ -686,7 +688,16 @@ public sealed class UITestRepl
             return null;
         });
         if (actual == expected) return $"PASS: {path} = {expected}";
-        throw new Exception($"ASSERT FAILED: {path}\n  Expected: {expected}\n  Actual: {actual}");
+        throw new InvalidOperationException($"ASSERT FAILED: {path}\n  Expected: {expected}\n  Actual: {actual}");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_recorder is not null)
+        {
+            await _recorder.DisposeAsync();
+            _recorder = null;
+        }
     }
 
     private async Task<string> RunScriptAsync(string[] args)

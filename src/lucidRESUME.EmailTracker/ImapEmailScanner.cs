@@ -14,6 +14,8 @@ public sealed class ImapEmailScanner : IEmailScanner
 
     public ImapEmailScanner(IOptions<EmailScannerOptions> opts, ILogger<ImapEmailScanner> logger)
     {
+        ArgumentNullException.ThrowIfNull(opts);
+        ArgumentNullException.ThrowIfNull(logger);
         _opts = opts.Value;
         _logger = logger;
     }
@@ -63,6 +65,10 @@ public sealed class ImapEmailScanner : IEmailScanner
                         var message = await folder.GetMessageAsync(uid, ct);
                         results.Add(ToScannedEmail(message));
                     }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to fetch message {Uid} from {Folder}", uid, folderName);
@@ -73,6 +79,10 @@ public sealed class ImapEmailScanner : IEmailScanner
             }
 
             await client.DisconnectAsync(true, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

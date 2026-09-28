@@ -5,3 +5,195 @@ root = true
 # correctness and security diagnostics. Performance findings remain visible in
 # the IDE without drowning normal builds in advisory-only output.
 dotnet_analyzer_diagnostic.category-Performance.severity = suggestion
+# Modern .NET application code uses ordinary await. Capturing policy belongs at
+# an actual synchronization boundary, not as ConfigureAwait(false) boilerplate
+# on every IO operation; Avalonia code also requires dispatcher affinity.
+dotnet_diagnostic.CA2007.severity = none
+
+[src/lucidRESUME.JobSearch/Adapters/*.cs]
+# These private response records are instantiated by System.Text.Json. Static
+# analysis cannot see that reflection-based construction and reports CA1812.
+dotnet_diagnostic.CA1812.severity = none
+
+[src/lucidRESUME.Core/Models/**/*.cs]
+# Persisted JSON models deliberately expose mutable collection properties and
+# string URLs for backward-compatible deserialization and UI data binding.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+dotnet_diagnostic.CA1056.severity = none
+dotnet_diagnostic.CA1819.severity = none
+
+[src/lucidRESUME.Core/Persistence/IAppStore.cs]
+# AppState is the serialized aggregate root; setters and List<T> are part of its
+# existing storage contract.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.Core/Interfaces/*.cs]
+# Keep established cross-assembly signatures source-compatible. These warnings
+# are CLS/API-design preferences rather than correctness issues.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA1054.severity = none
+dotnet_diagnostic.CA1716.severity = none
+
+[src/lucidRESUME.Core/Models/Evidence/EvidenceLedgerBuilder.cs]
+# Lowercase is part of the stable hash/slug wire format; changing case would
+# invalidate persisted evidence identifiers.
+dotnet_diagnostic.CA1308.severity = none
+
+[src/lucidRESUME.Parsing/**/*.cs]
+# Parser tokens, extensions, fingerprints, and learned-template keys use a
+# deliberate lowercase ASCII canonical form.
+dotnet_diagnostic.CA1308.severity = none
+# Parser classification operates on an explicitly normalized, invariant token
+# grammar. Repeating comparison arguments at every lookup obscures that grammar
+# without changing its culture-independent behaviour.
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1310.severity = none
+# Parsing is an infrequent desktop ingestion boundary. Cached logging delegates
+# would add considerably more surface than their allocation saving warrants.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+# Corrupt third-party documents can fail with exceptions from several Open XML,
+# PDF, IO and serialization layers. Boundary catches intentionally turn those
+# failures into a parser miss; asynchronous paths rethrow cancellation first.
+dotnet_diagnostic.CA1031.severity = none
+
+[src/lucidRESUME.Parsing/*.cs]
+# Root-level parser implementations use the same normalized grammar and
+# corruption-tolerant ingestion boundary as the template helpers above.
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1310.severity = none
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+dotnet_diagnostic.CA1031.severity = none
+
+[src/lucidRESUME.Parsing/AtsPatterns/AtsPatternDetector.cs]
+# Detection results are YAML-backed mutable DTOs.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.Parsing/Templates/TemplateParsingHints.cs]
+# Learned template hints are mutable JSON storage contracts.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.Parsing/IDocumentParser.cs]
+# ParsedDocument is an established cross-assembly result contract.
+dotnet_diagnostic.CA1002.severity = none
+
+[src/lucidRESUME.JobSpec/**/*.cs]
+# Extraction compares an invariant normalized grammar of headings, labels and
+# tokens. The explicit normalization is the culture boundary.
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1310.severity = none
+# Job import is an infrequent boundary and these diagnostic messages are not on
+# a hot path; generated logging methods would add disproportionate surface.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+# Scrapers and optional extractors deliberately isolate failures from external
+# parsers, browsers and models. Async catches rethrow cancellation first.
+dotnet_diagnostic.CA1031.severity = none
+
+[src/lucidRESUME.JobSpec/*.cs]
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1310.severity = none
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+dotnet_diagnostic.CA1031.severity = none
+
+[src/lucidRESUME.JobSpec/Extraction/JdFieldFuser.cs]
+# Fusion results are established mutable cross-assembly contracts populated by
+# the extractor pipeline.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.JobSpec/Extraction/StructuralExtractor.cs]
+# The established extraction API returns a mutable candidate batch.
+dotnet_diagnostic.CA1002.severity = none
+
+[src/lucidRESUME.JobSpec/Scrapers/PlaywrightScraper.cs]
+# The second browser check is required after acquiring the initialization lock;
+# another caller may have initialized it while this caller was waiting.
+dotnet_diagnostic.CA1508.severity = none
+
+[src/lucidRESUME.JobML/JobMlModels.cs]
+# JobML models are the YAML interchange contract. Mutable lists and string URI
+# fields are required for serializer compatibility and schema fidelity.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+dotnet_diagnostic.CA1056.severity = none
+
+[src/lucidRESUME.JobML/*.cs]
+# Lowercase slugs, evidence states and probe keys are stable JobML wire values.
+dotnet_diagnostic.CA1308.severity = none
+
+[src/lucidRESUME.EmailTracker/**/*.cs]
+# Email scanning is a scheduled IO boundary, not a logging hot path. External
+# IMAP/parser failures are isolated, while cancellation is explicitly rethrown.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+dotnet_diagnostic.CA1031.severity = none
+
+[src/lucidRESUME.EmailTracker/*.cs]
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+dotnet_diagnostic.CA1031.severity = none
+
+[src/lucidRESUME.EmailTracker/EmailScannerOptions.cs]
+# Options binding requires a mutable collection property.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.EmailTracker/EmailScanOrchestrator.cs]
+# ScanSummary is an established mutable result DTO.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.EmailTracker/Matching/EmailApplicationMatcher.cs]
+# Company normalization produces a stable lowercase comparison key.
+dotnet_diagnostic.CA1308.severity = none
+
+[src/lucidRESUME.Extraction/**/*.cs]
+# Optional model/recognizer boundaries degrade independently so one unavailable
+# detector cannot abort deterministic ingestion. Cancellation is rethrown first.
+dotnet_diagnostic.CA1031.severity = none
+# Extraction runs once per imported document; generated logging delegates add no
+# meaningful value on this non-hot path.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+
+[src/lucidRESUME.Extraction/Ner/OnnxNerOptions.cs]
+# Configuration binding requires mutable arrays and dictionaries. These are also
+# an established public options contract.
+dotnet_diagnostic.CA1819.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+[src/lucidRESUME.Extraction/Ner/WordpieceTokenizer.cs]
+# Lowercasing is required by uncased BERT vocabularies and token IDs.
+dotnet_diagnostic.CA1308.severity = none
+
+[src/lucidRESUME.Extraction/Pipeline/ExtractionPipeline.cs]
+# Normalized entity values are persisted lowercase comparison keys.
+dotnet_diagnostic.CA1308.severity = none
+
+[src/lucidRESUME.Core/Persistence/IAppStore.cs]
+# Normalized role keys are persisted and lowercase is part of their established
+# compatibility format.
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1310.severity = none
+
+[src/lucidRESUME.Core/Models/Resume/Certification.cs]
+# "Resume" is the established namespace; CA1716 is a cross-language naming preference.
+dotnet_diagnostic.CA1716.severity = none
+
+[src/lucidRESUME.Core/Models/Extraction/ExtractedEntity.cs]
+# NormalizedValue is an established lowercase persisted representation.
+dotnet_diagnostic.CA1308.severity = none

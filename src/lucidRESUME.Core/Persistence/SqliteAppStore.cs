@@ -78,6 +78,7 @@ public sealed class SqliteAppStore : IAppStore, IDisposable
 
     public async Task SaveAsync(AppState state, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(state);
         await _lock.WaitAsync(ct);
         try { SaveCore(state); }
         finally { _lock.Release(); }
@@ -85,6 +86,7 @@ public sealed class SqliteAppStore : IAppStore, IDisposable
 
     public async Task MutateAsync(Action<AppState> mutate, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(mutate);
         await _lock.WaitAsync(ct);
         try
         {
@@ -225,7 +227,7 @@ public sealed class SqliteAppStore : IAppStore, IDisposable
         }
 
         // Profile
-        Upsert("profile", "id", "1", JsonSerializer.Serialize(state.Profile, JsonOpts));
+        UpsertProfile(JsonSerializer.Serialize(state.Profile, JsonOpts));
 
         // Jobs
         Execute("DELETE FROM jobs");
@@ -305,11 +307,10 @@ public sealed class SqliteAppStore : IAppStore, IDisposable
             : default;
     }
 
-    private void Upsert(string table, string keyCol, string keyVal, string data)
+    private void UpsertProfile(string data)
     {
         using var cmd = _conn.CreateCommand();
-        cmd.CommandText = $"INSERT INTO {table} ({keyCol}, data) VALUES ($key, $data) ON CONFLICT({keyCol}) DO UPDATE SET data = $data";
-        cmd.Parameters.AddWithValue("$key", keyVal);
+        cmd.CommandText = "INSERT INTO profile (id, data) VALUES (1, $data) ON CONFLICT(id) DO UPDATE SET data = $data";
         cmd.Parameters.AddWithValue("$data", data);
         cmd.ExecuteNonQuery();
     }
@@ -326,7 +327,9 @@ public sealed class SqliteAppStore : IAppStore, IDisposable
     private void Execute(string sql)
     {
         using var cmd = _conn.CreateCommand();
+#pragma warning disable CA2100 // Callers are private and pass only compile-time SQL literals.
         cmd.CommandText = sql;
+#pragma warning restore CA2100
         cmd.ExecuteNonQuery();
     }
 

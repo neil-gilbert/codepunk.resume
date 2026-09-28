@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Hashing;
 using System.Text;
 using System.Text.Json.Serialization;
@@ -72,6 +73,8 @@ public sealed class TemplateFingerprint
 
     public static TemplateFingerprint FromDocument(WordprocessingDocument doc)
     {
+        ArgumentNullException.ThrowIfNull(doc);
+
         // 1. Defined style names (sorted, lowercased for case-insensitive matching)
         var definedStyles = doc.MainDocumentPart?.StyleDefinitionsPart?.Styles?
             .Elements<Style>()
@@ -117,6 +120,8 @@ public sealed class TemplateFingerprint
     /// </summary>
     public double SimilarityTo(TemplateFingerprint other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         // Fast path: identical hash
         if (Hash == other.Hash) return 1.0;
 
@@ -150,7 +155,7 @@ public sealed class TemplateFingerprint
 
         var font = normalStyle?.StyleRunProperties?.RunFonts?.Ascii?.Value
                    ?? doc.MainDocumentPart?.DocumentSettingsPart?.Settings?
-                       .Elements<DefaultTabStop>().FirstOrDefault()?.Val?.Value.ToString()
+                       .Elements<DefaultTabStop>().FirstOrDefault()?.Val?.Value.ToString(CultureInfo.InvariantCulture)
                    ?? "";
 
         var sizeStr = normalStyle?.StyleRunProperties?.FontSize?.Val?.Value;
@@ -186,6 +191,6 @@ public sealed class TemplateFingerprint
         // Combine all stable components into a single byte span and hash with XxHash64
         var input = string.Join("|", styles) + $";{font};{sizeHp};{margins};{templateName}";
         var hash = XxHash64.HashToUInt64(Encoding.UTF8.GetBytes(input));
-        return hash.ToString("x16");
+        return hash.ToString("x16", CultureInfo.InvariantCulture);
     }
 }

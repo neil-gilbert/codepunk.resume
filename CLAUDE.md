@@ -58,8 +58,8 @@ lucidRESUME (Avalonia app shell - DI wiring, Views, ViewModels)
   ├── AI             Ollama/Anthropic/OpenAI, AI detection (5 signals), de-AI, translation
   ├── EmailTracker   IMAP scanning (MailKit), email classification, application matching
   ├── Export         JSON Resume + Markdown exporters
-  ├── Collabora      LibreOffice/editor integration, macOS native openers
-  ├── UXTesting      UI automation (REPL, MCP, scripts, ImportFile, PasteJob)
+  ├── Collabora      Installed-editor discovery, LibreOffice fallback, macOS native openers
+  ├── Avalonia.UITesting  UI automation (REPL, MCP, scripts, ImportFile, PasteJob)
   └── Core           Domain models, interfaces, persistence (SQLite + sqlite-vec)
 ```
 
@@ -106,7 +106,7 @@ All external HTTP services use typed `HttpClient` registered with `AddStandardRe
 
 ## Tests
 
-xUnit 2.9.3. Five test projects under `tests/`: AI.Tests, Core.Tests, Extraction.Tests, JobSpec.Tests, Matching.Tests. Plus `test/lucidRESUME.UXTesting.Tests`. Direct service instantiation - no mocking framework.
+xUnit 2.9.3. Test projects live under `tests/`; the Avalonia automation framework has its own test project. Direct service instantiation - no mocking framework.
 
 ## Key Conventions
 

@@ -5,7 +5,12 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace lucidRESUME.JobML;
 
-public sealed class JobMlParseException(string message, Exception? inner = null) : Exception(message, inner);
+public sealed class JobMlParseException : Exception
+{
+    public JobMlParseException() { }
+    public JobMlParseException(string message) : base(message) { }
+    public JobMlParseException(string message, Exception innerException) : base(message, innerException) { }
+}
 
 public sealed class JobMlParser
 {
@@ -34,6 +39,7 @@ public sealed class JobMlParser
 
     public JobMlFile Parse(string source)
     {
+        ArgumentNullException.ThrowIfNull(source);
         var normalized = MarkdownEvidenceIndex.NormalizeNewlines(source);
         var matches = JobMlFence.Matches(normalized);
         if (matches.Count == 0)
@@ -95,6 +101,7 @@ public sealed class JobMlParser
 
     public string Serialize(JobMlFile file)
     {
+        ArgumentNullException.ThrowIfNull(file);
         var markdown = file.Markdown.TrimEnd();
         var yaml = SerializeYaml(file.Data);
         return $"{markdown}\n\n---\n\n```jobml\n{yaml}\n```\n";
@@ -102,6 +109,7 @@ public sealed class JobMlParser
 
     public JobMlRoot ParseYaml(string yaml)
     {
+        ArgumentNullException.ThrowIfNull(yaml);
         try
         {
             return _deserializer.Deserialize<JobMlRoot>(UpgradeLegacySyntax(yaml))
@@ -129,5 +137,9 @@ public sealed class JobMlParser
         }
     }
 
-    public string SerializeYaml(JobMlRoot root) => _serializer.Serialize(root).TrimEnd();
+    public string SerializeYaml(JobMlRoot root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        return _serializer.Serialize(root).TrimEnd();
+    }
 }

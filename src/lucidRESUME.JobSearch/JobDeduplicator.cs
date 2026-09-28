@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace lucidRESUME.JobSearch;
 
-public sealed class JobDeduplicator
+public static class JobDeduplicator
 {
     private static readonly string[] StripWords =
         ["senior", "junior", "lead", "principal", "staff", "mid", "associate"];
@@ -17,15 +17,16 @@ public sealed class JobDeduplicator
         if (string.IsNullOrWhiteSpace(title))
             return "";
 
-        var normalised = StripPattern.Replace(title.ToLowerInvariant(), "");
+        var normalised = StripPattern.Replace(title, "");
         // Collapse multiple spaces left by removed words
         return Regex.Replace(normalised.Trim(), @"\s{2,}", " ");
     }
 
-    public IReadOnlyList<JobDescription> Deduplicate(IEnumerable<JobDescription> jobs)
+    public static IReadOnlyList<JobDescription> Deduplicate(IEnumerable<JobDescription> jobs)
     {
+        ArgumentNullException.ThrowIfNull(jobs);
         return jobs
-            .GroupBy(j => $"{(j.Company ?? "").ToLowerInvariant()}|{NormaliseTitle(j.Title)}")
+            .GroupBy(j => $"{j.Company ?? ""}|{NormaliseTitle(j.Title)}", StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(j => j.Source.FetchedAt).First())
             .ToList();
     }

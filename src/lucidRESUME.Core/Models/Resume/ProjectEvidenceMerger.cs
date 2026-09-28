@@ -7,6 +7,8 @@ public static class ProjectEvidenceMerger
 {
     public static void MergeAuditObservations(ResumeDocument resume, IEnumerable<Project> observations)
     {
+        ArgumentNullException.ThrowIfNull(resume);
+        ArgumentNullException.ThrowIfNull(observations);
         foreach (var observation in observations)
         {
             var index = resume.Projects.FindIndex(project => SameIdentity(project, observation));

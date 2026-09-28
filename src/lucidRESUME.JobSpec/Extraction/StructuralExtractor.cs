@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 
+using System.Globalization;
+
 namespace lucidRESUME.JobSpec.Extraction;
 
 /// <summary>
@@ -10,6 +12,7 @@ public static partial class StructuralExtractor
 {
     public static List<JdFieldCandidate> Extract(string text)
     {
+        ArgumentNullException.ThrowIfNull(text);
         var candidates = new List<JdFieldCandidate>();
         var lines = text.Split('\n', StringSplitOptions.TrimEntries);
         var lower = text.ToLowerInvariant();
@@ -208,8 +211,8 @@ public static partial class StructuralExtractor
         var kMatch = KSalaryRx().Match(text);
         if (kMatch.Success)
         {
-            candidates.Add(new("salary_min", (int.Parse(kMatch.Groups[1].Value) * 1000).ToString(), 0.85, "structural"));
-            candidates.Add(new("salary_max", (int.Parse(kMatch.Groups[2].Value) * 1000).ToString(), 0.85, "structural"));
+            candidates.Add(new("salary_min", (int.Parse(kMatch.Groups[1].Value, CultureInfo.InvariantCulture) * 1000).ToString(CultureInfo.InvariantCulture), 0.85, "structural"));
+            candidates.Add(new("salary_max", (int.Parse(kMatch.Groups[2].Value, CultureInfo.InvariantCulture) * 1000).ToString(CultureInfo.InvariantCulture), 0.85, "structural"));
             return;
         }
 
@@ -249,7 +252,7 @@ public static partial class StructuralExtractor
             var m = rx.Match(text);
             if (m.Success && int.TryParse(m.Groups[1].Value, out var yrs) && yrs is > 0 and < 50)
             {
-                candidates.Add(new("yearsexp", yrs.ToString(), 0.9, "structural"));
+                candidates.Add(new("yearsexp", yrs.ToString(CultureInfo.InvariantCulture), 0.9, "structural"));
                 return;
             }
         }

@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
+using System.Globalization;
 using lucidRESUME.Core.Models.Extraction;
 using lucidRESUME.Core.Models.Resume;
 
@@ -11,13 +12,18 @@ public static partial class EvidenceLedgerBuilder
 {
     public static EvidenceLedger EnsureCurrent(ResumeDocument resume)
     {
+        ArgumentNullException.ThrowIfNull(resume);
         var revision = ComputeSourceRevision(resume);
         if (resume.EvidenceLedger.SourceRevision == revision && resume.EvidenceLedger.Evidence.Count > 0)
             return resume.EvidenceLedger;
         return Rebuild(resume, revision);
     }
 
-    public static EvidenceLedger Rebuild(ResumeDocument resume) => Rebuild(resume, ComputeSourceRevision(resume));
+    public static EvidenceLedger Rebuild(ResumeDocument resume)
+    {
+        ArgumentNullException.ThrowIfNull(resume);
+        return Rebuild(resume, ComputeSourceRevision(resume));
+    }
 
     /// <summary>
     /// Rebuilds the merged document's claims while retaining the original evidence records
@@ -26,6 +32,8 @@ public static partial class EvidenceLedgerBuilder
     /// </summary>
     public static EvidenceLedger RebuildFromSources(ResumeDocument resume, IEnumerable<EvidenceLedger> sources)
     {
+        ArgumentNullException.ThrowIfNull(resume);
+        ArgumentNullException.ThrowIfNull(sources);
         var sourceEvidence = sources.SelectMany(source => source.Evidence)
             .GroupBy(item => item.Id, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
@@ -60,6 +68,7 @@ public static partial class EvidenceLedgerBuilder
 
     public static string FastHash(string value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         const ulong offset = 14695981039346656037;
         const ulong prime = 1099511628211;
         var hash = offset;
@@ -91,8 +100,8 @@ public static partial class EvidenceLedgerBuilder
             var role = string.Join(" | ", new[]
                 {
                     experience.Title, experience.Company, experience.Location,
-                    experience.StartDate?.ToString("yyyy-MM-dd"),
-                    experience.IsCurrent ? "present" : experience.EndDate?.ToString("yyyy-MM-dd")
+                    experience.StartDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    experience.IsCurrent ? "present" : experience.EndDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
                 }
                 .Where(value => !string.IsNullOrWhiteSpace(value)));
             var method = experience.ImportSources.Contains("LLM extraction", StringComparer.OrdinalIgnoreCase)
@@ -224,12 +233,14 @@ public static partial class EvidenceLedgerBuilder
 
     public static Guid StableGuid(string value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim().ToLowerInvariant()));
         return new Guid(hash.AsSpan(0, 16));
     }
 
     public static string Slug(string value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         value = value.Replace("ASP.NET", "aspnet", StringComparison.OrdinalIgnoreCase)
             .Replace(".NET", "dotnet", StringComparison.OrdinalIgnoreCase)
             .Replace("C++", "cpp", StringComparison.OrdinalIgnoreCase)

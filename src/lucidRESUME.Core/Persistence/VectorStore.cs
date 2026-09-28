@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace lucidRESUME.Core.Persistence;
@@ -24,6 +25,7 @@ public sealed class VectorStore
     public async Task UpsertAsync(long rowId, float[] embedding,
         string sourceType, string? sourceId, string text, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(embedding);
         await _lock.WaitAsync(ct);
         try
         {
@@ -36,12 +38,13 @@ public sealed class VectorStore
     public async Task<long> AddAsync(float[] embedding, string sourceType,
         string? sourceId, string text, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(embedding);
         await _lock.WaitAsync(ct);
         try
         {
             using var idCommand = _conn.CreateCommand();
             idCommand.CommandText = "SELECT COALESCE(MAX(rowid), 0) + 1 FROM vec_meta";
-            var rowId = (long)(idCommand.ExecuteScalar() ?? 1L);
+            var rowId = (long)(await idCommand.ExecuteScalarAsync(ct) ?? 1L);
             UpsertCore(rowId, embedding, sourceType, sourceId, text);
             return rowId;
         }
@@ -52,6 +55,7 @@ public sealed class VectorStore
     public async Task<IReadOnlyList<VectorSearchResult>> SearchAsync(
         float[] queryEmbedding, int k = 10, string? sourceTypeFilter = null, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(queryEmbedding);
         await _lock.WaitAsync(ct);
         try
         {
@@ -59,6 +63,7 @@ public sealed class VectorStore
 
             using var cmd = _conn.CreateCommand();
             var table = TableFor(queryEmbedding);
+#pragma warning disable CA2100 // TableFor returns one of two hard-coded internal table names.
             cmd.CommandText = sourceTypeFilter != null
                 ? $"""
                   SELECT v.rowid, v.distance, m.source_type, m.source_id, m.text
@@ -77,21 +82,22 @@ public sealed class VectorStore
                     AND k = $k
                   ORDER BY v.distance
                   """;
+#pragma warning restore CA2100
 
             cmd.Parameters.AddWithValue("$query", ToBlob(queryEmbedding));
             cmd.Parameters.AddWithValue("$k", k);
             if (sourceTypeFilter != null)
                 cmd.Parameters.AddWithValue("$filter", sourceTypeFilter);
 
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read())
+            using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
             {
                 results.Add(new VectorSearchResult
                 {
                     RowId = reader.GetInt64(0),
                     Distance = reader.GetFloat(1),
                     SourceType = reader.GetString(2),
-                    SourceId = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    SourceId = await reader.IsDBNullAsync(3, ct) ? null : reader.GetString(3),
                     Text = reader.GetString(4),
                 });
             }
@@ -109,7 +115,8 @@ public sealed class VectorStore
         {
             using var cmd = _conn.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM vec_meta";
-            return Convert.ToInt32(cmd.ExecuteScalar() ?? 0);
+            var count = await cmd.ExecuteScalarAsync(ct);
+            return Convert.ToInt32(count ?? 0, CultureInfo.InvariantCulture);
         }
         finally { _lock.Release(); }
     }
@@ -129,13 +136,17 @@ public sealed class VectorStore
         using var transaction = _conn.BeginTransaction();
         using var staleCommand = _conn.CreateCommand();
         staleCommand.Transaction = transaction;
+#pragma warning disable CA2100 // The alternate table name is selected from two internal constants.
         staleCommand.CommandText = $"DELETE FROM {(table == "vec_embeddings" ? "vec_embeddings_768" : "vec_embeddings")} WHERE rowid = $rowid";
+#pragma warning restore CA2100
         staleCommand.Parameters.AddWithValue("$rowid", rowId);
         staleCommand.ExecuteNonQuery();
 
         using var cmd = _conn.CreateCommand();
         cmd.Transaction = transaction;
+#pragma warning disable CA2100 // TableFor returns one of two hard-coded internal table names.
         cmd.CommandText = $"INSERT OR REPLACE INTO {table}(rowid, embedding) VALUES ($rowid, $embedding)";
+#pragma warning restore CA2100
         cmd.Parameters.AddWithValue("$rowid", rowId);
         cmd.Parameters.AddWithValue("$embedding", ToBlob(embedding));
         cmd.ExecuteNonQuery();

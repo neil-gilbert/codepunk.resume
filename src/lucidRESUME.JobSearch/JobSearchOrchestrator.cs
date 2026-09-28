@@ -7,19 +7,13 @@ namespace lucidRESUME.JobSearch;
 
 public sealed class JobSearchOrchestrator
 {
-    private readonly RoleSuggestionService _roleSuggestionService;
-    private readonly JobDeduplicator _deduplicator;
     private readonly IEnumerable<IJobSearchAdapter> _adapters;
     private readonly IMatchingService _matchingService;
 
     public JobSearchOrchestrator(
-        RoleSuggestionService roleSuggestionService,
-        JobDeduplicator deduplicator,
         IEnumerable<IJobSearchAdapter> adapters,
         IMatchingService matchingService)
     {
-        _roleSuggestionService = roleSuggestionService;
-        _deduplicator = deduplicator;
         _adapters = adapters;
         _matchingService = matchingService;
     }
@@ -28,7 +22,9 @@ public sealed class JobSearchOrchestrator
         ResumeDocument resume, UserProfile profile, CancellationToken ct = default)
     {
         // 1. Generate queries from resume + profile
-        var queries = _roleSuggestionService.GenerateQueries(resume, profile);
+        ArgumentNullException.ThrowIfNull(resume);
+        ArgumentNullException.ThrowIfNull(profile);
+        var queries = RoleSuggestionService.GenerateQueries(resume, profile);
 
         // 2. Fan out every query to every configured adapter in parallel
         var configuredAdapters = _adapters.Where(a => a.IsConfigured).ToList();
@@ -48,12 +44,14 @@ public sealed class JobSearchOrchestrator
             {
                 throw;
             }
+#pragma warning disable CA1031 // An adapter is an isolation boundary; one provider must not fail the fan-out.
             catch (Exception ex)
             {
                 // Log and degrade gracefully - one failing adapter should not crash the search
                 _ = ex; // surfaced to caller via logs in the adapter; swallow here
                 return (IReadOnlyList<JobDescription>)[];
             }
+#pragma warning restore CA1031
         });
 
         var allResults = await Task.WhenAll(searchTasks);
@@ -62,7 +60,7 @@ public sealed class JobSearchOrchestrator
         var allJobs = allResults.SelectMany(r => r);
 
         // 4. Deduplicate
-        var deduplicated = _deduplicator.Deduplicate(allJobs);
+        var deduplicated = JobDeduplicator.Deduplicate(allJobs);
 
         // 5. Filter blocked companies (case-insensitive contains)
         var filtered = deduplicated

@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using lucidRESUME.Core.Interfaces;
 using lucidRESUME.Core.Models.Jobs;
+using System.Globalization;
 
 namespace lucidRESUME.JobSearch.Adapters;
 
@@ -15,6 +16,7 @@ public sealed class RemotiveAdapter : IJobSearchAdapter
 
     public async Task<IReadOnlyList<JobDescription>> SearchAsync(JobSearchQuery query, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         var url = $"https://remotive.com/api/remote-jobs?search={Uri.EscapeDataString(query.Keywords)}&limit={query.MaxResults}";
         var response = await _http.GetFromJsonAsync<RemotiveResponse>(url, ct);
         return response?.Jobs.Select(ToJobDescription).ToList() ?? [];
@@ -26,7 +28,7 @@ public sealed class RemotiveAdapter : IJobSearchAdapter
         {
             Type = JobSourceType.Remotive,
             Url = j.Url,
-            ExternalId = j.Id.ToString()
+            ExternalId = j.Id.ToString(CultureInfo.InvariantCulture)
         });
         job.Title = j.Title;
         job.Company = j.CompanyName;
@@ -34,6 +36,6 @@ public sealed class RemotiveAdapter : IJobSearchAdapter
         return job;
     }
 
-    private record RemotiveResponse(List<RemotiveJob> Jobs);
-    private record RemotiveJob(int Id, string Title, string CompanyName, string? Description, string Url);
+    private sealed record RemotiveResponse(List<RemotiveJob> Jobs);
+    private sealed record RemotiveJob(int Id, string Title, string CompanyName, string? Description, string Url);
 }

@@ -10,6 +10,8 @@ public static class NerExtractor
     public static async Task<List<JdFieldCandidate>> ExtractAsync(
         string text, IEnumerable<IEntityDetector> detectors, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentNullException.ThrowIfNull(detectors);
         var candidates = new List<JdFieldCandidate>();
         var context = new DetectionContext(text);
 
@@ -32,6 +34,10 @@ public static class NerExtractor
                         entity.Confidence,
                         $"ner:{detector.DetectorId}"));
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch { /* individual detector failure is non-fatal */ }
         }

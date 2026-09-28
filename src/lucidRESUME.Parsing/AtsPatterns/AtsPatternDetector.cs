@@ -37,6 +37,8 @@ public sealed class AtsPatternDetector
 
     public AtsDetectionResult Detect(string text, string? pdfMetadata = null)
     {
+        ArgumentNullException.ThrowIfNull(text);
+
         var lines = text.Split('\n');
         var headings = lines.Count(l => l.TrimStart().StartsWith('#'));
         var nonEmpty = lines.Where(l => l.Trim().Length > 0).ToList();

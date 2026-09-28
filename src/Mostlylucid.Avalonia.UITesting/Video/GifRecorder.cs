@@ -58,7 +58,8 @@ public sealed class GifRecorder : IAsyncDisposable
         if (!_recording) return;
 
         _recording = false;
-        _cts?.Cancel();
+        if (_cts is not null)
+            await _cts.CancelAsync();
 
         if (_captureTask != null)
         {
@@ -142,7 +143,7 @@ public sealed class GifRecorder : IAsyncDisposable
         });
     }
 
-    private static void EncodeGif(string filePath, IReadOnlyList<(byte[] PngData, int DelayMs)> frames)
+    private static void EncodeGif(string filePath, List<(byte[] PngData, int DelayMs)> frames)
     {
         if (frames.Count == 0) return;
 

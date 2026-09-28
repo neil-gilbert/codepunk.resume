@@ -16,15 +16,16 @@ public sealed class JoinRiseAdapter : IJobSearchAdapter
 
     public async Task<IReadOnlyList<JobDescription>> SearchAsync(JobSearchQuery query, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         var url = $"https://api.joinrise.io/api/v1/jobs/public?page=1&limit={query.MaxResults}&sort=desc&sortedBy=createdAt";
         var response = await _http.GetFromJsonAsync<JoinRiseResponse>(url, ct);
         if (response?.Result?.Jobs is null) return [];
 
-        var keyword = query.Keywords.ToLowerInvariant();
+        var keyword = query.Keywords;
         var results = response.Result.Jobs
             .Where(j => string.IsNullOrWhiteSpace(keyword) ||
-                        (j.Title?.ToLowerInvariant().Contains(keyword) == true) ||
-                        (j.SkillsSuggest?.Any(s => s.ToLowerInvariant().Contains(keyword)) == true))
+                        (j.Title?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true) ||
+                        (j.SkillsSuggest?.Any(s => s.Contains(keyword, StringComparison.OrdinalIgnoreCase)) == true))
             .Select(ToJobDescription)
             .ToList();
 
@@ -66,15 +67,15 @@ public sealed class JoinRiseAdapter : IJobSearchAdapter
 
     // Response shape
 
-    private record JoinRiseResponse(
+    private sealed record JoinRiseResponse(
         [property: JsonPropertyName("success")] bool Success,
         [property: JsonPropertyName("result")] JoinRiseResult? Result);
 
-    private record JoinRiseResult(
+    private sealed record JoinRiseResult(
         [property: JsonPropertyName("count")] int Count,
         [property: JsonPropertyName("jobs")] List<JoinRiseJob> Jobs);
 
-    private record JoinRiseJob(
+    private sealed record JoinRiseJob(
         [property: JsonPropertyName("_id")] string Id,
         [property: JsonPropertyName("title")] string Title,
         [property: JsonPropertyName("url")] string Url,
@@ -84,11 +85,11 @@ public sealed class JoinRiseAdapter : IJobSearchAdapter
         [property: JsonPropertyName("descriptionBreakdown")] JoinRiseBreakdown? DescriptionBreakdown,
         [property: JsonPropertyName("createdAt")] string? CreatedAt);
 
-    private record JoinRiseOwner(
+    private sealed record JoinRiseOwner(
         [property: JsonPropertyName("companyName")] string? CompanyName,
         [property: JsonPropertyName("locationAddress")] string? LocationAddress);
 
-    private record JoinRiseBreakdown(
+    private sealed record JoinRiseBreakdown(
         [property: JsonPropertyName("oneSentenceJobSummary")] string? OneSentenceJobSummary,
         [property: JsonPropertyName("workModel")] string? WorkModel,
         [property: JsonPropertyName("employmentType")] string? EmploymentType,

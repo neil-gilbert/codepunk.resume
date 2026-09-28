@@ -12,6 +12,17 @@ namespace lucidRESUME.JobSearch;
 /// </summary>
 public sealed class SearchWatchPoller
 {
+    private static readonly Action<ILogger, int, Exception?> LogPolling =
+        LoggerMessage.Define<int>(LogLevel.Information, new EventId(1, nameof(LogPolling)),
+            "Polling {Count} due search watches");
+    private static readonly Action<ILogger, string, int, string, Exception?> LogWatchCompleted =
+        LoggerMessage.Define<string, int, string>(LogLevel.Information,
+            new EventId(2, nameof(LogWatchCompleted)),
+            "Watch '{Name}': {New} new jobs from '{Query}'");
+    private static readonly Action<ILogger, string, Exception?> LogWatchFailed =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(3, nameof(LogWatchFailed)),
+            "Watch '{Name}' poll failed");
+
     private readonly JobSearchService _searchService;
     private readonly IAppStore _store;
     private readonly ILogger<SearchWatchPoller> _logger;
@@ -34,7 +45,7 @@ public sealed class SearchWatchPoller
 
         if (dueWatches.Count == 0) return [];
 
-        _logger.LogInformation("Polling {Count} due search watches", dueWatches.Count);
+        LogPolling(_logger, dueWatches.Count, null);
         var notifications = new List<WatchNotification>();
 
         var existingJobIds = new HashSet<Guid>(state.Jobs.Select(j => j.JobId));
@@ -85,13 +96,18 @@ public sealed class SearchWatchPoller
                     });
                 }
 
-                _logger.LogInformation("Watch '{Name}': {New} new jobs from '{Query}'",
-                    watch.Name, newMatches.Count, watch.Query);
+                LogWatchCompleted(_logger, watch.Name, newMatches.Count, watch.Query, null);
+            }
+#pragma warning disable CA1031 // Each persisted watch is an isolation boundary for the polling batch.
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Watch '{Name}' poll failed", watch.Name);
+                LogWatchFailed(_logger, watch.Name, ex);
             }
+#pragma warning restore CA1031
         }
 
         return notifications;
@@ -103,5 +119,5 @@ public sealed class WatchNotification
     public string WatchName { get; init; } = "";
     public string Query { get; init; } = "";
     public int NewJobCount { get; init; }
-    public List<string> TopJobs { get; init; } = [];
+    public IReadOnlyList<string> TopJobs { get; init; } = [];
 }

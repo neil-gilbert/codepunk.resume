@@ -1,0 +1,22 @@
+[*.cs]
+# Selector, command and protocol tokens use a lowercase invariant wire grammar.
+dotnet_diagnostic.CA1307.severity = none
+dotnet_diagnostic.CA1308.severity = none
+dotnet_diagnostic.CA1309.severity = none
+dotnet_diagnostic.CA1310.severity = none
+
+# Reflection, rendering and automation boundaries intentionally convert failures
+# into test diagnostics. Cancellation is handled explicitly by async entry points.
+dotnet_diagnostic.CA1031.severity = none
+
+# These shapes are already published NuGet API. Changing them would be a source
+# compatibility break unrelated to runtime correctness.
+dotnet_diagnostic.CA1002.severity = none
+dotnet_diagnostic.CA1003.severity = none
+dotnet_diagnostic.CA1032.severity = none
+dotnet_diagnostic.CA1720.severity = none
+dotnet_diagnostic.CA2227.severity = none
+
+# REPL output is deliberately user-culture aware and contains user-facing text.
+dotnet_diagnostic.CA1303.severity = none
+dotnet_diagnostic.CA1305.severity = none

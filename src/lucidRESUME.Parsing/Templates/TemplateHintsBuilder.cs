@@ -110,6 +110,8 @@ public static class TemplateHintsBuilder
     /// </summary>
     public static TemplateParsingHints BuildFromFiles(IEnumerable<string> filePaths)
     {
+        ArgumentNullException.ThrowIfNull(filePaths);
+
         var styleUsage = new Dictionary<string, StyleUsageStats>(StringComparer.OrdinalIgnoreCase);
         var observedSectionTexts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var hasTable = false;
@@ -137,6 +139,9 @@ public static class TemplateHintsBuilder
     public static TemplateParsingHints RefineHints(
         TemplateParsingHints existing, IEnumerable<string> filePaths)
     {
+        ArgumentNullException.ThrowIfNull(existing);
+        ArgumentNullException.ThrowIfNull(filePaths);
+
         var fresh = BuildFromFiles(filePaths);
 
         // Merge section maps
@@ -301,7 +306,9 @@ public static class TemplateHintsBuilder
         }
 
         // Bold ALL-CAPS short line = section heading
-        var allCaps = text.Length < 60 && text == text.ToUpperInvariant() && text.Any(char.IsLetter);
+        var allCaps = text.Length < 60
+            && text.Equals(text.ToUpperInvariant(), StringComparison.Ordinal)
+            && text.Any(char.IsLetter);
         if (allCaps) return ParagraphRole.Section;
 
         return ParagraphRole.Body;

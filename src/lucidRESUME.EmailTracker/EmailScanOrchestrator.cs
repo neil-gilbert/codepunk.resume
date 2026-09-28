@@ -3,6 +3,7 @@ using lucidRESUME.Core.Persistence;
 using lucidRESUME.EmailTracker.Classification;
 using lucidRESUME.EmailTracker.Matching;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace lucidRESUME.EmailTracker;
 
@@ -21,6 +22,7 @@ public sealed class EmailScanOrchestrator
     private readonly IEmailScanner _scanner;
     private readonly IAppStore _store;
     private readonly ILogger<EmailScanOrchestrator> _logger;
+    private readonly int _scanDaysBack;
 
     // Terminal stages - never auto-advance past these
     private static readonly HashSet<ApplicationStage> TerminalStages =
@@ -34,11 +36,16 @@ public sealed class EmailScanOrchestrator
     public EmailScanOrchestrator(
         IEmailScanner scanner,
         IAppStore store,
-        ILogger<EmailScanOrchestrator> logger)
+        ILogger<EmailScanOrchestrator> logger,
+        IOptions<EmailScannerOptions>? options = null)
     {
+        ArgumentNullException.ThrowIfNull(scanner);
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(logger);
         _scanner = scanner;
         _store = store;
         _logger = logger;
+        _scanDaysBack = Math.Max(1, options?.Value.ScanDaysBack ?? 30);
     }
 
     public bool IsConfigured => _scanner.IsConfigured;
@@ -54,7 +61,7 @@ public sealed class EmailScanOrchestrator
         }
 
         var state = await _store.LoadAsync(ct);
-        var since = DateTimeOffset.UtcNow.AddDays(-30);
+        var since = DateTimeOffset.UtcNow.AddDays(-_scanDaysBack);
 
         // Collect existing message IDs to avoid duplicates
         var seenMessageIds = new HashSet<string>(

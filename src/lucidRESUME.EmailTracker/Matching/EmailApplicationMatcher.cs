@@ -16,6 +16,8 @@ public static class EmailApplicationMatcher
 {
     public static MatchResult Match(ScannedEmail email, IReadOnlyList<JobApplication> applications)
     {
+        ArgumentNullException.ThrowIfNull(email);
+        ArgumentNullException.ThrowIfNull(applications);
         if (applications.Count == 0)
             return new MatchResult();
 
@@ -82,14 +84,14 @@ public static class EmailApplicationMatcher
 
     private static string? ExtractDomain(string email)
     {
-        var atIndex = email.IndexOf('@');
+        var atIndex = email.IndexOf('@', StringComparison.Ordinal);
         return atIndex >= 0 ? email[(atIndex + 1)..] : null;
     }
 
     private static string NormalizeCompany(string company) =>
-        company.Replace(" ", "")
-               .Replace(",", "")
-               .Replace(".", "")
+        company.Replace(" ", "", StringComparison.Ordinal)
+               .Replace(",", "", StringComparison.Ordinal)
+               .Replace(".", "", StringComparison.Ordinal)
                .Replace("Inc", "", StringComparison.OrdinalIgnoreCase)
                .Replace("Ltd", "", StringComparison.OrdinalIgnoreCase)
                .Replace("LLC", "", StringComparison.OrdinalIgnoreCase)

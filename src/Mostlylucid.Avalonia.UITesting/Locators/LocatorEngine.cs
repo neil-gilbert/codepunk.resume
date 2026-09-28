@@ -26,6 +26,8 @@ public sealed class LocatorEngine
     /// </summary>
     public async Task<Control> ResolveOneAsync(Locator locator, Control root, int? timeoutMs = null)
     {
+        ArgumentNullException.ThrowIfNull(locator);
+        ArgumentNullException.ThrowIfNull(root);
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs ?? DefaultTimeoutMs);
         Exception? lastError = null;
 
@@ -64,6 +66,8 @@ public sealed class LocatorEngine
         Justification = "Kept as an instance member to preserve the public locator-engine API.")]
     public async Task<IReadOnlyList<Control>> ResolveAllAsync(Locator locator, Control root)
     {
+        ArgumentNullException.ThrowIfNull(locator);
+        ArgumentNullException.ThrowIfNull(root);
         var matches = await Dispatcher.UIThread.InvokeAsync(() => locator.Resolve(root).ToList());
         return matches;
     }
@@ -75,6 +79,8 @@ public sealed class LocatorEngine
     /// </summary>
     public async Task<Control> ResolveFirstAsync(Locator locator, Control root, int? timeoutMs = null)
     {
+        ArgumentNullException.ThrowIfNull(locator);
+        ArgumentNullException.ThrowIfNull(root);
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs ?? DefaultTimeoutMs);
         Exception? lastError = null;
 

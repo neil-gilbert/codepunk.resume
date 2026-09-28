@@ -16,6 +16,7 @@ public sealed class SvgExporter
 
     public string Export(Visual root)
     {
+        ArgumentNullException.ThrowIfNull(root);
         _defsCounter = 0;
         _deferredDefs.Clear();
 

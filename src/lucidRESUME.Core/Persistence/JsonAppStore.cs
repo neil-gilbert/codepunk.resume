@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace lucidRESUME.Core.Persistence;
 
-public sealed class JsonAppStore : IAppStore
+public sealed class JsonAppStore : IAppStore, IDisposable
 {
     private readonly string _filePath;
     private readonly SemaphoreSlim _lock = new(1, 1);
@@ -30,6 +30,7 @@ public sealed class JsonAppStore : IAppStore
 
     public async Task SaveAsync(AppState state, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(state);
         await _lock.WaitAsync(ct);
         try
         {
@@ -47,6 +48,7 @@ public sealed class JsonAppStore : IAppStore
     /// </summary>
     public async Task MutateAsync(Action<AppState> mutate, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(mutate);
         await _lock.WaitAsync(ct);
         try
         {
@@ -78,7 +80,7 @@ public sealed class JsonAppStore : IAppStore
         if (!File.Exists(_filePath))
             return new AppState();
 
-        await using var stream = File.OpenRead(_filePath);
+        using var stream = File.OpenRead(_filePath);
         var state = await JsonSerializer.DeserializeAsync<AppState>(stream, Options, ct) ?? new AppState();
         state.NormalizeResumes();
         return state;
@@ -96,15 +98,23 @@ public sealed class JsonAppStore : IAppStore
         var tmp = Path.Combine(dir, Path.GetRandomFileName());
         try
         {
-            await using (var stream = File.Create(tmp))
+            using (var stream = File.Create(tmp))
                 await JsonSerializer.SerializeAsync(stream, state, Options, ct);
 
             File.Move(tmp, _filePath, overwrite: true);
         }
-        catch
+        finally
         {
-            try { File.Delete(tmp); } catch { /* best-effort cleanup */ }
-            throw;
+            try
+            {
+                if (File.Exists(tmp)) File.Delete(tmp);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // Best-effort cleanup; preserve the original serialization failure.
+            }
         }
     }
+
+    public void Dispose() => _lock.Dispose();
 }

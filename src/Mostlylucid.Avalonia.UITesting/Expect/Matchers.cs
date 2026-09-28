@@ -112,6 +112,7 @@ public class HasTextMatcher : Matcher
 
     public override MatcherResult Evaluate(Control control)
     {
+        ArgumentNullException.ThrowIfNull(control);
         var actual = TextLocator.GetDisplayedTextIncludingDescendants(control);
         if (actual is null)
             return MatcherResult.Failed($"{control.GetType().Name} has no displayed text");

@@ -7,6 +7,8 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddEmailTracker(this IServiceCollection services, IConfiguration config)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(config);
         services.Configure<EmailScannerOptions>(config.GetSection("Email"));
         services.AddSingleton<IEmailScanner, ImapEmailScanner>();
         services.AddSingleton<EmailScanOrchestrator>();

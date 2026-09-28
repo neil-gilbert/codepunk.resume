@@ -39,6 +39,8 @@ internal sealed class WordpieceTokenizer
     /// </summary>
     public BertEncoding Encode(string text, int maxLength = 512)
     {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxLength, 2);
         var normalized = _lowerCase ? text.ToLowerInvariant() : text;
         var wordTokens = BasicTokenize(normalized);
 
@@ -54,7 +56,7 @@ internal sealed class WordpieceTokenizer
             foreach (var piece in pieces)
             {
                 if (ids.Count >= maxLength - 1) break;
-                int pieceLen = piece.StartsWith("##") ? piece.Length - 2 : piece.Length;
+                int pieceLen = piece.StartsWith("##", StringComparison.Ordinal) ? piece.Length - 2 : piece.Length;
                 ids.Add(_vocab.TryGetValue(piece, out var vid) ? vid : UnkId);
                 offsets.Add((cursor, cursor + pieceLen));
                 cursor += pieceLen;

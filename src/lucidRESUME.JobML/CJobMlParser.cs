@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Globalization;
 
 namespace lucidRESUME.JobML;
 
@@ -41,7 +42,7 @@ public static partial class CJobMlParser
             throw new CJobMlParseException("cJobML references must be consecutive and ordered from 1.");
 
         var xrefs = XrefPattern().Matches(prose)
-            .Select(match => int.Parse(match.Groups["number"].Value))
+            .Select(match => int.Parse(match.Groups["number"].Value, CultureInfo.InvariantCulture))
             .ToList();
         var referenceNumbers = references.Select(reference => reference.Number).ToHashSet();
         var unresolved = xrefs.Where(number => !referenceNumbers.Contains(number)).Distinct().Order().ToList();
@@ -76,7 +77,7 @@ public static partial class CJobMlParser
 
     private static CJobMlParsedReference ParseReference(Match match)
     {
-        var number = int.Parse(match.Groups["number"].Value);
+        var number = int.Parse(match.Groups["number"].Value, CultureInfo.InvariantCulture);
         var citation = match.Groups["citation"].Value.Trim();
         var uriMatch = UriPattern().Match(citation);
         var typeMatch = TypePattern().Match(citation);
@@ -111,7 +112,12 @@ public static partial class CJobMlParser
     private static partial Regex TitlePattern();
 }
 
-public sealed class CJobMlParseException(string message) : Exception(message);
+public sealed class CJobMlParseException : Exception
+{
+    public CJobMlParseException() { }
+    public CJobMlParseException(string message) : base(message) { }
+    public CJobMlParseException(string message, Exception innerException) : base(message, innerException) { }
+}
 
 public sealed record CJobMlDocument(
     string Prose,

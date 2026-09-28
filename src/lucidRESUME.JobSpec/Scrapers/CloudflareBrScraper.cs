@@ -22,6 +22,9 @@ public sealed class CloudflareBrScraper : IJobPageScraper
         IOptions<CloudflareBrOptions> options,
         ILogger<CloudflareBrScraper> logger)
     {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
         _http = http;
         _options = options.Value;
         _logger = logger;
@@ -33,6 +36,7 @@ public sealed class CloudflareBrScraper : IJobPageScraper
 
     public async Task<ScrapeResult?> ScrapeAsync(Uri uri, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(uri);
         if (!_options.IsConfigured)
         {
             _logger.LogDebug("[{Scraper}] Not configured - skipping.", Name);
@@ -53,12 +57,17 @@ public sealed class CloudflareBrScraper : IJobPageScraper
             response = await _http.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "[{Scraper}] API call failed for {Url}", Name, uri);
             return null;
         }
 
+        using var responseScope = response;
         CfBrResponse? result;
         try
         {

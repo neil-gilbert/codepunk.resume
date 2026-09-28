@@ -158,6 +158,7 @@ public static class CJobMlProjector
 
     public static string FormatReference(int number, JobMlEvidence evidence)
     {
+        ArgumentNullException.ThrowIfNull(evidence);
         var builder = new StringBuilder($"[{number}] ");
         if (evidence.Authors.Count > 0)
             builder.Append(string.Join(", ", evidence.Authors)).Append(". ");
@@ -220,4 +221,9 @@ public sealed record CJobMlReference(
     string Markdown,
     string PlainText);
 
-public sealed class JobMlProjectionException(string message) : InvalidOperationException(message);
+public sealed class JobMlProjectionException : InvalidOperationException
+{
+    public JobMlProjectionException() { }
+    public JobMlProjectionException(string message) : base(message) { }
+    public JobMlProjectionException(string message, Exception innerException) : base(message, innerException) { }
+}

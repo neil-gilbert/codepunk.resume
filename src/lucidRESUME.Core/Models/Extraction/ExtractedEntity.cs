@@ -17,7 +17,10 @@ public sealed class ExtractedEntity
     public ExtractedEntity() { }
 
     public static ExtractedEntity Create(string value, string classification,
-        DetectionSource source, double confidence, int pageNumber) => new()
+        DetectionSource source, double confidence, int pageNumber)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return new()
         {
             EntityId = Guid.NewGuid(),
             Value = value,
@@ -27,6 +30,7 @@ public sealed class ExtractedEntity
             Confidence = confidence,
             PageNumber = pageNumber
         };
+    }
 
     public void SetLabel(string label, string? section = null)
     {

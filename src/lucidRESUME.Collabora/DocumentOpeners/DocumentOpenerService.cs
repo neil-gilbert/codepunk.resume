@@ -17,7 +17,7 @@ public sealed class DocumentOpenerService
         Available = Discover();
     }
 
-    private static IReadOnlyList<DocumentOpener> Discover()
+    private static List<DocumentOpener> Discover()
     {
         var openers = new List<DocumentOpener?>
         {

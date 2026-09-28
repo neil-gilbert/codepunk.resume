@@ -16,11 +16,13 @@ public sealed class StructuredDataExtractor
 
     public StructuredDataExtractor(ILogger<StructuredDataExtractor> logger)
     {
+        ArgumentNullException.ThrowIfNull(logger);
         _logger = logger;
     }
 
     public async Task<StructuredJobData?> ExtractAsync(string html, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(html);
         var result = new StructuredJobData();
         var foundAny = false;
 

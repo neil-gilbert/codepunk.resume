@@ -511,8 +511,8 @@ lucidRESUME (Avalonia UI)
     ├── AI ──→ Core, Matching
     ├── EmailTracker ──→ Core
     ├── Export ──→ Core
-    ├── Collabora ──→ Core
-    ├── UXTesting ──→ (Avalonia)
+    ├── Collabora (document tools)
+    ├── Avalonia.UITesting ──→ (Avalonia)
     └── Core ──→ Microsoft.Data.Sqlite, sqlite-vec
 ```
 

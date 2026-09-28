@@ -16,18 +16,19 @@ public sealed class JobicyRssAdapter : IJobSearchAdapter
 
     public async Task<IReadOnlyList<JobDescription>> SearchAsync(JobSearchQuery query, CancellationToken ct = default)
     {
-        var url = "https://jobicy.com/jobs-rss-feed?count=50";
-        var xmlStream = await _http.GetStreamAsync(url, ct);
+        ArgumentNullException.ThrowIfNull(query);
+        var url = new Uri("https://jobicy.com/jobs-rss-feed?count=50");
+        using var xmlStream = await _http.GetStreamAsync(url, ct);
 
         using var xmlReader = XmlReader.Create(xmlStream, new XmlReaderSettings { Async = true });
         var feed = SyndicationFeed.Load(xmlReader);
         if (feed?.Items is null) return [];
 
-        var keyword = query.Keywords.ToLowerInvariant();
+        var keyword = query.Keywords;
         var results = feed.Items
             .Where(item => string.IsNullOrWhiteSpace(keyword) ||
-                           (item.Title?.Text?.ToLowerInvariant().Contains(keyword) == true) ||
-                           (item.Summary?.Text?.ToLowerInvariant().Contains(keyword) == true))
+                           (item.Title?.Text?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true) ||
+                           (item.Summary?.Text?.Contains(keyword, StringComparison.OrdinalIgnoreCase) == true))
             .Take(query.MaxResults)
             .Select(ToJobDescription)
             .ToList();

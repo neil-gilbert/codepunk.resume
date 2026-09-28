@@ -19,6 +19,6 @@ namespace Mostlylucid.Avalonia.UITesting.Scripts;
 [JsonSerializable(typeof(List<UIAction>))]
 [JsonSerializable(typeof(List<UIActionResult>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
-internal partial class UITestJsonContext : JsonSerializerContext
+internal sealed partial class UITestJsonContext : JsonSerializerContext
 {
 }

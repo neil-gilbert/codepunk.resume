@@ -33,6 +33,7 @@ public sealed class SearchHardFilter
     /// <summary>Apply all hard filters to a job. Returns true if job passes.</summary>
     public bool Passes(Jobs.JobDescription job, decimal? detectedSalaryMin = null)
     {
+        ArgumentNullException.ThrowIfNull(job);
         if (RequireSalary && job.Salary is null) return false;
         if (MinSalary.HasValue && (job.Salary?.Min ?? 0) < MinSalary.Value) return false;
         if (RequireRemote && job.IsRemote != true) return false;

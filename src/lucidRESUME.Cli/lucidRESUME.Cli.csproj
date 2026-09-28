@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\lucidRESUME.Core\lucidRESUME.Core.csproj" />
-    <ProjectReference Include="..\lucidRESUME.Processing\lucidRESUME.Processing.csproj" />
     <ProjectReference Include="..\lucidRESUME.Ingestion\lucidRESUME.Ingestion.csproj" />
     <ProjectReference Include="..\lucidRESUME.Extraction\lucidRESUME.Extraction.csproj" />
     <ProjectReference Include="..\lucidRESUME.JobSpec\lucidRESUME.JobSpec.csproj" />

@@ -25,6 +25,8 @@ public sealed class ParserSelector
 
     public ParserSelector(IEnumerable<IDocumentParser> parsers, ILogger<ParserSelector> logger)
     {
+        ArgumentNullException.ThrowIfNull(parsers);
+        ArgumentNullException.ThrowIfNull(logger);
         _parsers = parsers.ToList();
         _logger = logger;
     }

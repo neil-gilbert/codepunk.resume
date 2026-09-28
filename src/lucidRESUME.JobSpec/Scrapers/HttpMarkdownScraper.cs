@@ -26,6 +26,9 @@ public sealed class HttpMarkdownScraper : IJobPageScraper
         StructuredDataExtractor structuredDataExtractor,
         ILogger<HttpMarkdownScraper> logger)
     {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(structuredDataExtractor);
+        ArgumentNullException.ThrowIfNull(logger);
         _http = http;
         _structuredDataExtractor = structuredDataExtractor;
         _logger = logger;
@@ -37,10 +40,15 @@ public sealed class HttpMarkdownScraper : IJobPageScraper
 
     public async Task<ScrapeResult?> ScrapeAsync(Uri uri, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(uri);
         string html;
         try
         {
             html = await _http.GetStringAsync(uri, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -77,6 +85,10 @@ public sealed class HttpMarkdownScraper : IJobPageScraper
         try
         {
             structuredData = await _structuredDataExtractor.ExtractAsync(html, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

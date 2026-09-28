@@ -33,6 +33,8 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
         StructuredDataExtractor structuredDataExtractor,
         ILogger<PlaywrightScraper> logger)
     {
+        ArgumentNullException.ThrowIfNull(structuredDataExtractor);
+        ArgumentNullException.ThrowIfNull(logger);
         _structuredDataExtractor = structuredDataExtractor;
         _logger = logger;
     }
@@ -44,6 +46,7 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
 
     public async Task<ScrapeResult?> ScrapeAsync(Uri uri, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(uri);
         await EnsureInitialisedAsync(ct);
 
         if (_browser is null)
@@ -55,7 +58,12 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
         IPage page;
         try
         {
+            ct.ThrowIfCancellationRequested();
             page = await _browser.NewPageAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -71,6 +79,7 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
                 Timeout = 30_000
             });
 
+            ct.ThrowIfCancellationRequested();
             var html = await page.ContentAsync();
 
             if (string.IsNullOrWhiteSpace(html))
@@ -91,6 +100,10 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
             {
                 structuredData = await _structuredDataExtractor.ExtractAsync(html, ct);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "[{Scraper}] Structured data extraction failed (non-fatal) for {Url}", Name, uri);
@@ -98,6 +111,10 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
 
             _logger.LogInformation("[{Scraper}] Success - {Len} chars for {Url}", Name, markdown.Length, uri);
             return new ScrapeResult { Markdown = markdown, StructuredData = structuredData };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -126,6 +143,10 @@ public sealed class PlaywrightScraper : IJobPageScraper, IAsyncDisposable
                 Headless = true
             });
             _logger.LogInformation("[{Scraper}] Playwright browser ready.", Name);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -78,8 +78,8 @@ public sealed class JobMlResumeCompiler(
             careerAnchorSubjects, job.Title, requirements);
         var sections = selected.GroupBy(x => x.Claim.Subject, StringComparer.OrdinalIgnoreCase)
             .OrderByDescending(group => group.Any(item => item.Claim.Type == "summary"))
-            .ThenByDescending(group => ExperienceSortDate(group.Key, accepted).End)
-            .ThenByDescending(group => ExperienceSortDate(group.Key, accepted).Start)
+            .ThenByDescending(group => FindExperiencePeriod(group.Key, accepted)?.SortEnd ?? DateOnly.MinValue)
+            .ThenByDescending(group => FindExperiencePeriod(group.Key, accepted)?.Start ?? DateOnly.MinValue)
             .ThenByDescending(group => group.Max(item => item.Score))
             .Select((group, number) => BuildEvidencePacket(group, number, requirements, accepted))
             .ToList();
@@ -189,10 +189,10 @@ public sealed class JobMlResumeCompiler(
             {
                 Claim = claim,
                 Entity = entities[claim.Subject],
-                Dates = ParseExperienceDates(claim.Statement)
+                Dates = ParseExperiencePeriod(claim.Statement)
             })
             .Where(item => item.Dates is not null &&
-                           LongerThanMonths(item.Dates.Value.Start, item.Dates.Value.End, minimumMonths))
+                           item.Dates.Value.IsLongerThan(minimumMonths))
             .GroupBy(item => item.Claim.Subject, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderByDescending(item => item.Dates!.Value.SortEnd).First())
             .OrderByDescending(item => item.Dates!.Value.SortEnd)
@@ -203,7 +203,7 @@ public sealed class JobMlResumeCompiler(
         {
             var dates = item.Dates!.Value;
             var heading = CompactHeading(item.Entity.Name);
-            var line = $"{heading} | {FormatExperienceDates(dates)}";
+            var line = $"{heading} | {dates.Format()}";
             var selectedClaim = new SelectedClaim(item.Claim, heading, line,
                 item.Claim.Evidence.Select((evidence, evidenceIndex) =>
                     evidence.Id ?? $"{item.Claim.Id}-e{evidenceIndex + 1}").ToList(),
@@ -219,14 +219,7 @@ public sealed class JobMlResumeCompiler(
         }).ToList();
     }
 
-    private static bool LongerThanMonths(DateOnly start, DateOnly? end, int months)
-    {
-        var effectiveEnd = end ?? DateOnly.FromDateTime(DateTime.UtcNow);
-        return start.AddMonths(Math.Max(0, months)) < effectiveEnd;
-    }
-
-    private static (DateOnly Start, DateOnly? End, bool IsCurrent, DateOnly SortEnd)?
-        ParseExperienceDates(string statement)
+    private static ExperiencePeriod? ParseExperiencePeriod(string statement)
     {
         var match = Regex.Match(statement,
             @"\|\s*(?<start>\d{4}-\d{2}-\d{2})\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|Present)\s*$",
@@ -234,19 +227,11 @@ public sealed class JobMlResumeCompiler(
         if (!match.Success || !DateOnly.TryParseExact(match.Groups["start"].Value, "yyyy-MM-dd",
                 CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)) return null;
         if (match.Groups["end"].Value.Equals("Present", StringComparison.OrdinalIgnoreCase))
-            return (start, null, true, DateOnly.MaxValue);
+            return new ExperiencePeriod(start, null);
         return DateOnly.TryParseExact(match.Groups["end"].Value, "yyyy-MM-dd",
             CultureInfo.InvariantCulture, DateTimeStyles.None, out var end)
-            ? (start, end, false, end)
+            ? new ExperiencePeriod(start, end)
             : null;
-    }
-
-    private static string FormatExperienceDates(
-        (DateOnly Start, DateOnly? End, bool IsCurrent, DateOnly SortEnd) dates)
-    {
-        var culture = CultureInfo.GetCultureInfo("en-GB");
-        var end = dates.IsCurrent ? "Present" : dates.End!.Value.ToString("MMM yyyy", culture);
-        return $"{dates.Start.ToString("MMM yyyy", culture)} - {end}";
     }
 
     private static List<SelectedClaim> FitHumanProse(
@@ -723,64 +708,23 @@ public sealed class JobMlResumeCompiler(
 
     private static string? ExperienceDateRange(string subject, IReadOnlyList<JobMlClaim> claims)
     {
-        var temporal = claims.FirstOrDefault(claim =>
-            claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) && claim.Type == "experience");
-        if (temporal is null) return null;
-        var match = Regex.Match(temporal.Statement,
-            @"\|\s*(?<start>\d{4}-\d{2}-\d{2})\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|Present)\s*$",
-            RegexOptions.IgnoreCase);
-        if (!match.Success || !DateOnly.TryParseExact(match.Groups["start"].Value, "yyyy-MM-dd",
-                CultureInfo.InvariantCulture, DateTimeStyles.None, out var start)) return null;
-        var endText = match.Groups["end"].Value;
-        var end = endText.Equals("Present", StringComparison.OrdinalIgnoreCase)
-            ? "Present"
-            : DateOnly.TryParseExact(endText, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out var endDate)
-                ? endDate.ToString("MMM yyyy", CultureInfo.GetCultureInfo("en-GB"))
-                : null;
-        return end is null
-            ? null
-            : $"{start.ToString("MMM yyyy", CultureInfo.GetCultureInfo("en-GB"))} - {end}";
+        return FindExperiencePeriod(subject, claims)?.Format();
     }
 
-    private static bool IsCurrentExperience(string subject, IReadOnlyList<JobMlClaim> claims) =>
-        claims.Any(claim => claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) &&
-                            claim.Type == "experience" &&
-                            Regex.IsMatch(claim.Statement, @"\|\s*present\s*$", RegexOptions.IgnoreCase));
-
-    private static (DateOnly Start, DateOnly End) ExperienceSortDate(
+    private static ExperiencePeriod? FindExperiencePeriod(
         string subject, IReadOnlyList<JobMlClaim> claims)
     {
         var temporal = claims.FirstOrDefault(claim =>
             claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) && claim.Type == "experience");
-        if (temporal is null) return (DateOnly.MinValue, DateOnly.MinValue);
-        var match = Regex.Match(temporal.Statement,
-            @"\|\s*(?<start>\d{4}-\d{2}-\d{2})\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|present)\s*$",
-            RegexOptions.IgnoreCase);
-        if (!match.Success || !DateOnly.TryParseExact(match.Groups["start"].Value, "yyyy-MM-dd",
-                CultureInfo.InvariantCulture, DateTimeStyles.None, out var start))
-            return (DateOnly.MinValue, DateOnly.MinValue);
-        if (match.Groups["end"].Value.Equals("present", StringComparison.OrdinalIgnoreCase))
-            return (start, DateOnly.MaxValue);
-        return DateOnly.TryParseExact(match.Groups["end"].Value, "yyyy-MM-dd",
-            CultureInfo.InvariantCulture, DateTimeStyles.None, out var end)
-            ? (start, end)
-            : (DateOnly.MinValue, DateOnly.MinValue);
+        return temporal is null ? null : ParseExperiencePeriod(temporal.Statement);
     }
 
     private static double ExperienceRecency(string subject, IReadOnlyList<JobMlClaim> claims)
     {
-        var temporal = claims.FirstOrDefault(claim =>
-            claim.Subject.Equals(subject, StringComparison.OrdinalIgnoreCase) && claim.Type == "experience");
-        if (temporal is null) return .4;
-        var match = Regex.Match(temporal.Statement,
-            @"\|\s*\d{4}-\d{2}-\d{2}\s*\|\s*(?<end>\d{4}-\d{2}-\d{2}|present)\s*$",
-            RegexOptions.IgnoreCase);
-        if (!match.Success) return .4;
-        if (match.Groups["end"].Value.Equals("present", StringComparison.OrdinalIgnoreCase)) return 1;
-        if (!DateOnly.TryParseExact(match.Groups["end"].Value, "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                DateTimeStyles.None, out var end)) return .4;
-        return end.Year switch
+        var period = FindExperiencePeriod(subject, claims);
+        if (period is null) return .4;
+        if (period.Value.IsCurrent) return 1;
+        return period.Value.End!.Value.Year switch
         {
             >= 2025 => 1,
             >= 2023 => .85,
@@ -788,6 +732,22 @@ public sealed class JobMlResumeCompiler(
             >= 2018 => .55,
             _ => .4
         };
+    }
+
+    private readonly record struct ExperiencePeriod(DateOnly Start, DateOnly? End)
+    {
+        public bool IsCurrent => End is null;
+        public DateOnly SortEnd => End ?? DateOnly.MaxValue;
+
+        public bool IsLongerThan(int months) =>
+            Start.AddMonths(Math.Max(0, months)) < (End ?? DateOnly.FromDateTime(DateTime.UtcNow));
+
+        public string Format()
+        {
+            var culture = CultureInfo.GetCultureInfo("en-GB");
+            var end = IsCurrent ? "Present" : End!.Value.ToString("MMM yyyy", culture);
+            return $"{Start.ToString("MMM yyyy", culture)} - {end}";
+        }
     }
 
     private static bool IsCareerAnchor(JobMlEntity entity) =>

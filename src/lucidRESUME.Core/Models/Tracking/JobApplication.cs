@@ -51,6 +51,7 @@ public sealed class JobApplication
 
     public static JobApplication Create(Jobs.JobDescription job)
     {
+        ArgumentNullException.ThrowIfNull(job);
         return new JobApplication
         {
             JobId = job.JobId,

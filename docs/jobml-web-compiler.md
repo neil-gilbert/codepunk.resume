@@ -20,6 +20,8 @@ LinkedIn + repositories + historical CVs
       bounded tightening and voice passes (optional)
                     |
        Markdown + cJobML + Word + PDF
+                    |
+       opaque application evidence URL
 ```
 
 ## Source contract
@@ -114,8 +116,12 @@ Minimal configuration:
     "MaximumUploadBytes": 16777216,
     "MaximumJobDescriptionBytes": 262144,
     "CompilationCacheMinutes": 30,
-    "PublicBaseUri": "https://careers.example.com/lucidresume",
+    "PublicBaseUri": "https://careers.example.com/resume",
     "RequireAuthenticatedWriter": true
+  },
+  "LucidResumeWeb": {
+    "PublicationDirectory": "App_Data/resume-publications",
+    "PublishCompiledResumes": true
   },
   "Tailoring": { "Provider": "llamasharp" },
   "LlamaSharp": {
@@ -124,10 +130,32 @@ Minimal configuration:
 }
 ```
 
-Set `PublicBaseUri` when downloads are compiled behind a reverse proxy or on a
+Set `PublicBaseUri` when the control is compiled behind a reverse proxy or on a
 developer machine. cJobML citations then point at the externally reachable,
-content-addressed career-record endpoint instead of `localhost`. If it is omitted,
-the request scheme, host and mapped route are used.
+application-specific evidence URL instead of `localhost`. If it is omitted, the
+request scheme, host and mapped route are used.
+
+The default renderer is Markdig with raw HTML disabled. A host with an established
+Markdown pipeline can register its own `IResumeMarkdownRenderer` before calling
+`AddLucidResumeCompiler`. This is the intended integration point for mounting the
+control under `/resume` in Mostlylucid without duplicating its presentation rules.
+
+For Mostlylucid, the package integration is intentionally small:
+
+```csharp
+builder.Services.AddScoped<IResumeMarkdownRenderer, MostlylucidResumeRenderer>();
+builder.Services.AddLucidResumeCompiler(builder.Configuration);
+
+// after UseAuthentication, UseAuthorization, and UseAntiforgery
+app.MapLucidResumeCompiler("/resume");
+```
+
+`MostlylucidResumeRenderer` is a thin adapter over the site's existing
+`MarkdownRenderingService`; it returns that pipeline's `HtmlContent`. Register it
+before `AddLucidResumeCompiler` so the default safe Markdig renderer is not added.
+The blog repository should reference the released `lucidRESUME.Web` package, not a
+path to a neighbouring checkout. This keeps its CI and container builds
+reproducible.
 
 OpenAI is optional. Configure `OpenAi:ApiKey` through server-side configuration
 or secrets, never browser JavaScript or a checked-in settings file. The OpenAI
@@ -137,14 +165,26 @@ provider uses the Responses API with strict structured output and `store: false`
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/lucidresume/` | Upload, paste, preview and download control |
-| `GET` | `/lucidresume/api/status` | Current master revision |
-| `POST` | `/lucidresume/api/career-record` | Validate and publish complete Markdown + JobML |
-| `POST` | `/lucidresume/api/ledger` | Compatibility alias for career-record publication |
-| `POST` | `/lucidresume/api/compile` | Compile a job-specific projection |
-| `GET/HEAD` | `/lucidresume/api/jobml` | Current full JobML career record |
-| `GET` | `/lucidresume/api/jobml/{revision}` | Immutable career-record revision |
-| `GET` | `/lucidresume/api/export/{id}/{format}` | `markdown`, `docx`, or `pdf` |
+| `GET` | `/resume/` | Upload, paste, preview, publish and download control |
+| `GET` | `/resume/api/status` | Current master revision |
+| `POST` | `/resume/api/career-record` | Validate and publish complete Markdown + JobML |
+| `POST` | `/resume/api/ledger` | Compatibility alias for career-record publication |
+| `POST` | `/resume/api/compile` | Compile a job-specific projection and optionally publish it |
+| `GET/HEAD` | `/resume/api/jobml` | Current full JobML career record |
+| `GET` | `/resume/api/jobml/{revision}` | Immutable career-record revision |
+| `GET` | `/resume/api/export/{id}/{format}` | Short-lived preview export compatibility route |
+| `GET` | `/resume/{publicId}` | Human application résumé and evidence view |
+| `GET/HEAD` | `/resume/{publicId}/jobml` | Full role-specific JobML; renders the evidence view for browser clients |
+| `GET` | `/resume/{publicId}/cjobml` | Compact résumé and cJobML Markdown |
+| `GET` | `/resume/{publicId}/transcript` | Complete source transcript, rendered for browsers or Markdown for machines |
+| `GET` | `/resume/{publicId}/download/{format}` | Durable `markdown`, `docx`, or `pdf` application export |
+
+The public ID is generated from 192 bits of cryptographic randomness. It identifies
+the exact application projection and source revision; it does not record who opens
+the URL. Publications are marked `noindex`, but the opaque URL is a bearer link,
+not an authorization boundary. The complete transcript may contain more detail
+than the short résumé, so a public host should add its own authorization policy if
+unguessable links are not sufficient for that deployment.
 
 Mutation endpoints require an authenticated identity by default and always require
 antiforgery validation. The local sample explicitly disables the authentication

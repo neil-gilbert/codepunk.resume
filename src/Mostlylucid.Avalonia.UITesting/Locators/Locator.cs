@@ -45,14 +45,20 @@ public abstract class Locator
 
     /// <summary>Match only controls that are descendants of <paramref name="container"/>.</summary>
     public Locator Inside(Locator container)
-        => new InsideLocator(this, container) { Source = $"inside({container.Describe()}) {Describe()}" };
+    {
+        ArgumentNullException.ThrowIfNull(container);
+        return new InsideLocator(this, container) { Source = $"inside({container.Describe()}) {Describe()}" };
+    }
 
     /// <summary>
     /// Reorder matches by spatial proximity to <paramref name="anchor"/>'s center,
     /// closest first. Useful for "the button next to the email field".
     /// </summary>
     public Locator Near(Locator anchor)
-        => new NearLocator(this, anchor) { Source = $"near({anchor.Describe()}) {Describe()}" };
+    {
+        ArgumentNullException.ThrowIfNull(anchor);
+        return new NearLocator(this, anchor) { Source = $"near({anchor.Describe()}) {Describe()}" };
+    }
 
     /// <summary>Best-effort string description for diagnostics.</summary>
     public virtual string Describe() => Source ?? GetType().Name;

@@ -12,12 +12,14 @@ public sealed class ExtractionPipeline
     public ExtractionPipeline(IEnumerable<IEntityDetector> detectors,
         ILogger<ExtractionPipeline>? logger = null)
     {
+        ArgumentNullException.ThrowIfNull(detectors);
         _detectors = detectors.OrderBy(d => d.Priority);
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ExtractedEntity>> RunAsync(DetectionContext context, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(context);
         var all = new List<ExtractedEntity>();
 
         foreach (var detector in _detectors)
@@ -26,6 +28,10 @@ public sealed class ExtractionPipeline
             {
                 var found = await detector.DetectAsync(context, ct);
                 all.AddRange(found);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {

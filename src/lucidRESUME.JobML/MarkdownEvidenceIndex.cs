@@ -48,6 +48,7 @@ public sealed class MarkdownEvidenceIndex
 
     public bool TryGet(string reference, out ProsePassage passage)
     {
+        ArgumentNullException.ThrowIfNull(reference);
         var normalized = NormalizeReference(reference);
         if (_ambiguousReferences.Contains(normalized))
         {
@@ -57,8 +58,11 @@ public sealed class MarkdownEvidenceIndex
         return _byReference.TryGetValue(normalized, out passage!);
     }
 
-    public bool IsAmbiguous(string reference) =>
-        _ambiguousReferences.Contains(NormalizeReference(reference));
+    public bool IsAmbiguous(string reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        return _ambiguousReferences.Contains(NormalizeReference(reference));
+    }
 
     public IReadOnlyList<ProsePassage> FindByFingerprint(string fingerprint) => Passages
         .Where(p => MatchesFingerprint(p.Text, fingerprint))
@@ -66,6 +70,7 @@ public sealed class MarkdownEvidenceIndex
 
     public IReadOnlyList<ProsePassage> FindByQuote(JobMlTextSelector selector)
     {
+        ArgumentNullException.ThrowIfNull(selector);
         var exact = NormalizeText(selector.Exact);
         if (exact.Length == 0) return [];
         var candidates = Passages.Where(p => string.Equals(p.Text, exact, StringComparison.Ordinal)).ToList();
@@ -91,6 +96,7 @@ public sealed class MarkdownEvidenceIndex
 
     public static MarkdownEvidenceIndex Create(string markdown)
     {
+        ArgumentNullException.ThrowIfNull(markdown);
         var passages = new List<ProsePassage>();
         var paragraph = new StringBuilder();
         var normalizedMarkdown = NormalizeNewlines(markdown);

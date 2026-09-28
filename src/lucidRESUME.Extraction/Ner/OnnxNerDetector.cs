@@ -63,10 +63,12 @@ public sealed class OnnxNerDetector : IEntityDetector, IDisposable
     public bool IsAvailable => _session is not null && _tokenizer is not null;
 
     public OnnxNerDetector(IOptions<OnnxNerOptions> options, ILogger<OnnxNerDetector> logger)
-        : this(options.Value, logger) { }
+        : this((options ?? throw new ArgumentNullException(nameof(options))).Value, logger) { }
 
     public OnnxNerDetector(OnnxNerOptions options, ILogger<OnnxNerDetector> logger)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
         _options = options;
         _logger = logger;
         _labels = _options.Labels ?? OnnxNerOptions.DefaultLabels;
@@ -74,7 +76,7 @@ public sealed class OnnxNerDetector : IEntityDetector, IDisposable
         // Pick entity type map: explicit config > auto-detect from labels
         if (_options.EntityTypeMap is { Count: > 0 })
             _entityTypeMap = new Dictionary<string, string>(_options.EntityTypeMap, StringComparer.OrdinalIgnoreCase);
-        else if (_labels.Any(l => l.Contains("PER")))
+        else if (_labels.Any(l => l.Contains("PER", StringComparison.Ordinal)))
             _entityTypeMap = DefaultGeneralEntityTypeMap;
         else
             _entityTypeMap = DefaultResumeEntityTypeMap;
@@ -111,7 +113,7 @@ public sealed class OnnxNerDetector : IEntityDetector, IDisposable
 
             try
             {
-                var sessionOptions = new SessionOptions
+                using var sessionOptions = new SessionOptions
                 {
                     GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
                     InterOpNumThreads = 1,
@@ -148,6 +150,7 @@ public sealed class OnnxNerDetector : IEntityDetector, IDisposable
     public Task<IReadOnlyList<ExtractedEntity>> DetectAsync(
         DetectionContext context, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(context);
         if (_session is null || _tokenizer is null)
             TryLoadModel();
 
@@ -161,6 +164,10 @@ public sealed class OnnxNerDetector : IEntityDetector, IDisposable
             var entities = RunInference(context);
             _logger.LogDebug("OnnxNerDetector: found {Count} entities", entities.Count);
             return Task.FromResult<IReadOnlyList<ExtractedEntity>>(entities);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -31,6 +31,7 @@ public sealed class UserProfile
 
     public void BlockCompany(string company)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(company);
         if (!BlockedCompanies.Contains(company, StringComparer.OrdinalIgnoreCase))
             BlockedCompanies.Add(company);
         UpdatedAt = DateTimeOffset.UtcNow;
@@ -38,12 +39,14 @@ public sealed class UserProfile
 
     public void EmphasiseSkill(string skill, string? reason = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skill);
         SkillsToEmphasise.Add(new SkillPreference { SkillName = skill, Reason = reason });
         UpdatedAt = DateTimeOffset.UtcNow;
     }
 
     public void AvoidSkill(string skill, string? reason = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(skill);
         SkillsToAvoid.Add(new SkillPreference { SkillName = skill, Reason = reason });
         UpdatedAt = DateTimeOffset.UtcNow;
     }
@@ -81,14 +84,15 @@ public sealed class UserProfile
     /// <summary>O(1) lookup after the first call - cache is built on demand.</summary>
     public int GetVoteScore(AspectType type, string value)
     {
+        ArgumentNullException.ThrowIfNull(value);
         _voteCache ??= BuildCache();
-        var key = (type, value.ToLowerInvariant());
+        var key = (type, value.ToUpperInvariant());
         return _voteCache.TryGetValue(key, out var vote) ? vote.Score : 0;
     }
 
     private Dictionary<(AspectType, string), AspectVote> BuildCache()
         => AspectVotes.ToDictionary(
-            v => (v.AspectType, v.AspectValue.ToLowerInvariant()),
+            v => (v.AspectType, v.AspectValue.ToUpperInvariant()),
             v => v);
 
     private void InvalidateCache() => _voteCache = null;
@@ -96,7 +100,6 @@ public sealed class UserProfile
     private AspectVote GetOrCreateVote(AspectType type, string value)
     {
         // Work against the list directly; cache is rebuilt after mutation
-        var normalised = value.ToLowerInvariant();
         var existing = AspectVotes.FirstOrDefault(v =>
             v.AspectType == type &&
             string.Equals(v.AspectValue, value, StringComparison.OrdinalIgnoreCase));
