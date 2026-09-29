@@ -130,23 +130,35 @@ public sealed class CompilerTests
         };
         file.Data.Entities.Add(new JobMlEntity
         {
-            Id = "recent-role", Type = "experience", Name = "Engineering Lead, Recent Ltd", Source = "#recent-role"
+            Id = "recent-role",
+            Type = "experience",
+            Name = "Engineering Lead, Recent Ltd",
+            Source = "#recent-role"
         });
         var evidence = new JobMlEvidence
         {
-            Type = "prose", Ref = "#recent-leadership",
+            Type = "prose",
+            Ref = "#recent-leadership",
             Fingerprint = new JobMlFingerprint { Text = MarkdownEvidenceIndex.Fingerprint(recentProse) }
         };
         file.Data.Claims.Add(new JobMlClaim
         {
-            Id = "recent-dates", Subject = "recent-role", Type = "experience",
+            Id = "recent-dates",
+            Subject = "recent-role",
+            Type = "experience",
             Statement = "Engineering Lead | Recent Ltd | 2025-01-01 | Present",
-            Review = "accepted", Origin = "declared", Evidence = [evidence]
+            Review = "accepted",
+            Origin = "declared",
+            Evidence = [evidence]
         });
         file.Data.Claims.Add(new JobMlClaim
         {
-            Id = "recent-leadership", Subject = "recent-role", Type = "achievement",
-            Statement = recentProse, Review = "accepted", Origin = "declared",
+            Id = "recent-leadership",
+            Subject = "recent-role",
+            Type = "achievement",
+            Statement = recentProse,
+            Review = "accepted",
+            Origin = "declared",
             Concepts = new JobMlClaimConcepts { Skills = ["typescript", "aws"] },
             Evidence = [evidence]
         });
