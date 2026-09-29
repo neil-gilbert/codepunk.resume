@@ -257,7 +257,7 @@ public sealed class WebControlTests : IClassFixture<WebApplicationFactory<Progra
         compile.Headers.Add("X-CSRF-TOKEN", token);
         compile.Content = new StringContent(JsonSerializer.Serialize(new
         {
-            jobDescription = "Head of Engineering. TypeScript and AWS experience required. Lead engineering change.",
+            jobDescription = "Head of Engineering\nTypeScript and AWS experience required. Lead engineering change.",
             polish = false,
             applicationReference = "Example Ltd, Head of Engineering"
         }), Encoding.UTF8, "application/json");
